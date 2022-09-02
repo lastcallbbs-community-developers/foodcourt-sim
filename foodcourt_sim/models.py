@@ -92,7 +92,7 @@ class LevelId(Enum):
 
 
 @unique
-class ModuleTypeId(Enum):
+class ModuleId(Enum):
     MULTIMIXER_ENABLE = 10
     SEQUENCER = 11
     SMALL_COUNTER = 12
@@ -184,7 +184,7 @@ class Module:
     jacks = []  # type: ignore
 
     level: InitVar[Level]
-    type: ModuleTypeId
+    id: ModuleId
     can_delete: bool
     rack_position: Position
     floor_position: Position
@@ -206,7 +206,7 @@ class Module:
 
 @dataclass
 class Scanner(Module):
-    _TYPE_IDS = [ModuleTypeId(149 + id.value) for id in LevelId]
+    _MODULE_IDS = [ModuleId(149 + id.value) for id in LevelId]
     rack_width = 2
 
     def __post_init__(self, level: Level) -> None:
@@ -217,7 +217,7 @@ class Scanner(Module):
 
 
 class MainInput(Scanner):
-    _TYPE_IDS = [ModuleTypeId(199 + id.value) for id in LevelId]
+    _MODULE_IDS = [ModuleId(199 + id.value) for id in LevelId]
 
 
 @dataclass
@@ -226,17 +226,17 @@ class Input(Module):
 
 
 class EntityInput(Input):
-    _TYPE_IDS = [ModuleTypeId.INPUT_1X, ModuleTypeId.INPUT_2X, ModuleTypeId.INPUT_3X]
+    _MODULE_IDS = [ModuleId.INPUT_1X, ModuleId.INPUT_2X, ModuleId.INPUT_3X]
 
     def __post_init__(self, level: Level) -> None:
         self.jacks = [InJack(eid.name) for eid in level.entity_inputs[self.input_id]]
 
 
 class Freezer(EntityInput):
-    _TYPE_IDS = [
-        ModuleTypeId.FREEZER_1X,
-        ModuleTypeId.FREEZER_3X,
-        ModuleTypeId.FREEZER_7X,
+    _MODULE_IDS = [
+        ModuleId.FREEZER_1X,
+        ModuleId.FREEZER_3X,
+        ModuleId.FREEZER_7X,
     ]
     rack_width = 2
 
@@ -247,76 +247,76 @@ class ToppingInput(Input):
 
 
 class FluidDispenser(ToppingInput):
-    _TYPE_IDS = [
-        ModuleTypeId.FLUID_DISPENSER_1X,
-        ModuleTypeId.FLUID_DISPENSER_2X,
-        ModuleTypeId.FLUID_DISPENSER_3X,
+    _MODULE_IDS = [
+        ModuleId.FLUID_DISPENSER_1X,
+        ModuleId.FLUID_DISPENSER_2X,
+        ModuleId.FLUID_DISPENSER_3X,
     ]
 
 
 class FluidCoater(ToppingInput):
-    _TYPE_IDS = [ModuleTypeId.FLUID_COATER]
+    _MODULE_IDS = [ModuleId.FLUID_COATER]
     on_rack = False
 
 
 class ToppingDispenser(ToppingInput):
-    _TYPE_IDS = [ModuleTypeId.TOPPING_DISPENSER, ModuleTypeId.HALF_TOPPING_DISPENSER]
+    _MODULE_IDS = [ModuleId.TOPPING_DISPENSER, ModuleId.HALF_TOPPING_DISPENSER]
 
 
 class SimpleMachine(Module):
-    _TYPE_IDS = [
-        ModuleTypeId.CONVEYOR,
-        ModuleTypeId.OUTPUT,
-        ModuleTypeId.WASTE_BIN,
-        ModuleTypeId.DOUBLE_SLICER,
-        ModuleTypeId.HORIZONTAL_SLICER,
-        ModuleTypeId.TRIPLE_SLICER,
-        ModuleTypeId.ROTATOR,
-        ModuleTypeId.ROLLER,
-        ModuleTypeId.DOCKER,
-        ModuleTypeId.FLATTENER,
+    _MODULE_IDS = [
+        ModuleId.CONVEYOR,
+        ModuleId.OUTPUT,
+        ModuleId.WASTE_BIN,
+        ModuleId.DOUBLE_SLICER,
+        ModuleId.HORIZONTAL_SLICER,
+        ModuleId.TRIPLE_SLICER,
+        ModuleId.ROTATOR,
+        ModuleId.ROLLER,
+        ModuleId.DOCKER,
+        ModuleId.FLATTENER,
     ]
     on_rack = False
 
 
 class Router(Module):
-    _TYPE_IDS = [ModuleTypeId.ROUTER]
+    _MODULE_IDS = [ModuleId.ROUTER]
     jacks = [InJack(name) for name in ["LEFT", "THRU", "RIGHT"]]
 
 
 class Sensor(Module):
-    _TYPE_IDS = [ModuleTypeId.SENSOR]
+    _MODULE_IDS = [ModuleId.SENSOR]
     jacks = [OutJack("SENSE")]
 
 
 class Sorter(Module):
-    _TYPE_IDS = [ModuleTypeId.SORTER]
+    _MODULE_IDS = [ModuleId.SORTER]
     jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
 
 
 class Cooker(Module):
-    _TYPE_IDS = [ModuleTypeId.GRILL, ModuleTypeId.FRYER, ModuleTypeId.MICROWAVE]
+    _MODULE_IDS = [ModuleId.GRILL, ModuleId.FRYER, ModuleId.MICROWAVE]
     jacks = [OutJack("SENSE"), InJack("EJECT")]
 
 
 class Stacker(Module):
-    _TYPE_IDS = [ModuleTypeId.STACKER]
+    _MODULE_IDS = [ModuleId.STACKER]
     jacks = [OutJack("STACK"), InJack("EJECT")]
 
 
 class Multimixer(Module):
-    _TYPE_IDS = [ModuleTypeId.MULTIMIXER, ModuleTypeId.MULTIMIXER_ENABLE]
+    _MODULE_IDS = [ModuleId.MULTIMIXER, ModuleId.MULTIMIXER_ENABLE]
     on_floor = False
 
     def __post_init__(self, level: Level) -> None:
         del level
-        if self.type is ModuleTypeId.MULTIMIXER:
+        if self.id is ModuleId.MULTIMIXER:
             self.jacks = [
                 *[InJack(f"IN_{i+1}") for i in range(4)],
                 *[OutJack(f"OUT_{i+1}") for i in range(4)],
             ]
         else:
-            assert self.type is ModuleTypeId.MULTIMIXER_ENABLE
+            assert self.id is ModuleId.MULTIMIXER_ENABLE
             self.jacks = [
                 InJack("enable"),
                 *[InJack(f"IN_{i+1}") for i in range(3)],
@@ -326,7 +326,7 @@ class Multimixer(Module):
 
 @dataclass
 class SmallCounter(Module):
-    _TYPE_IDS = [ModuleTypeId.SMALL_COUNTER]
+    _MODULE_IDS = [ModuleId.SMALL_COUNTER]
     on_floor = False
     jacks = [OutJack("ZERO"), InJack("IN_1"), InJack("IN_2")]
 
@@ -335,7 +335,7 @@ class SmallCounter(Module):
 
 @dataclass
 class BigCounter(Module):
-    _TYPE_IDS = [ModuleTypeId.BIG_COUNTER]
+    _MODULE_IDS = [ModuleId.BIG_COUNTER]
     on_floor = False
     jacks = [
         OutJack("ZERO"),
@@ -351,7 +351,7 @@ class BigCounter(Module):
 
 @dataclass
 class Sequencer(Module):
-    _TYPE_IDS = [ModuleTypeId.SEQUENCER]
+    _MODULE_IDS = [ModuleId.SEQUENCER]
     on_floor = False
     rack_width = 2
     jacks = [
@@ -383,7 +383,7 @@ class PaintMask(Enum):
 
 @dataclass
 class Painter(Module):
-    _TYPE_IDS = [ModuleTypeId.PAINTER]
+    _MODULE_IDS = [ModuleId.PAINTER]
 
     color: PaintColor
     mask: PaintMask
@@ -391,7 +391,7 @@ class Painter(Module):
 
 @dataclass
 class Espresso(Module):
-    _TYPE_IDS = [ModuleTypeId.ESPRESSO]
+    _MODULE_IDS = [ModuleId.ESPRESSO]
     jacks = [InJack(name) for name in ["GRIND", "XTRACT", "STEAM", "EJECT"]]
 
 
@@ -403,7 +403,7 @@ class MusicMode(Enum):
 
 @dataclass
 class Animatronic(Module):
-    _TYPE_IDS = [ModuleTypeId.ANIMATRONIC]
+    _MODULE_IDS = [ModuleId.ANIMATRONIC]
     rack_width = 2
     jacks = [
         InJack(name) for name in ["DANCE", "SING", "GLASSES", "I", "IV", "V", "I'"]
@@ -412,26 +412,26 @@ class Animatronic(Module):
     music_mode: MusicMode
 
 
-def populate_module_table() -> dict[ModuleTypeId, Type[Module]]:
-    lookup: dict[ModuleTypeId, Type[Module]] = {}
+def populate_module_table() -> dict[ModuleId, Type[Module]]:
+    lookup: dict[ModuleId, Type[Module]] = {}
     # dynamically pick up all Module subclasses in this module
     for value in globals().values():
         if (
             isinstance(value, type)
             and issubclass(value, Module)
-            and hasattr(value, "_TYPE_IDS")
+            and hasattr(value, "_MODULE_IDS")
         ):
             # pylint: disable-next=protected-access
-            for type_id in value._TYPE_IDS:  # type: ignore  # dynamically checked
-                assert isinstance(type_id, ModuleTypeId)
+            for module_id in value._MODULE_IDS:  # type: ignore  # dynamically checked
+                assert isinstance(module_id, ModuleId)
                 assert (
-                    type_id not in lookup
-                ), f"{type_id} is claimed by {lookup[type_id]} and {value}"
-                lookup[type_id] = value
+                    module_id not in lookup
+                ), f"{module_id} is claimed by {lookup[module_id]} and {value}"
+                lookup[module_id] = value
 
     assert lookup.keys() == set(
-        ModuleTypeId
-    ), f"unhandled module types: {set(ModuleTypeId) - lookup.keys()}"
+        ModuleId
+    ), f"unhandled module ids: {set(ModuleId) - lookup.keys()}"
     return lookup
 
 
@@ -462,10 +462,10 @@ class Solution:  # pylint: disable=too-many-instance-attributes
             index = self.modules.index(arg)
         elif isinstance(arg, int):
             index = arg
-        elif isinstance(arg, ModuleTypeId):
-            index = next(i for i, m in enumerate(self.modules) if m.type is arg)
+        elif isinstance(arg, ModuleId):
+            index = next(i for i, m in enumerate(self.modules) if m.id is arg)
         module = self.modules[index]
-        print(f"Wires to/from {module.type} (index {index}):")
+        print(f"Wires to/from {module.id} (index {index}):")
         connections = []
         for i, wire in enumerate(self.wires):
             if index not in (wire.module_1, wire.module_2):
@@ -484,7 +484,7 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                 other_direction = JackDirection(3 - j2.direction.value)
                 jack_1 += f" ({other_direction.name})".ljust(6)
             print(
-                f"jack {jack_1} to jack {jack_2} of {module_2.type} (index {wire.module_2})"
+                f"jack {jack_1} to jack {jack_2} of {module_2.id} (index {wire.module_2})"
             )
 
     def check(self, level: Level) -> None:
@@ -494,18 +494,18 @@ class Solution:  # pylint: disable=too-many-instance-attributes
         main_input_index = -1
         for i, module in enumerate(self.modules):
             module.check()
-            if 200 <= module.type.value <= 220:
+            if 200 <= module.id.value <= 220:
                 assert (
                     main_input_index == -1
                 ), f"duplicate main input module found at index {i} (first was at {main_input_index})"
                 main_input_index = i
                 assert (
-                    module.type.value == level.id.value + 199
-                ), f"mismatched main input ({module.type}) for level {level.internal_name} at index {i}"
-            if 150 <= module.type.value <= 170:
+                    module.id.value == level.id.value + 199
+                ), f"mismatched main input ({module.id}) for level {level.internal_name} at index {i}"
+            if 150 <= module.id.value <= 170:
                 assert (
-                    module.type.value == level.id.value + 149
-                ), f"incorrect scanner ({module.type}) for level {level.internal_name} at index {i}"
+                    module.id.value == level.id.value + 149
+                ), f"incorrect scanner ({module.id}) for level {level.internal_name} at index {i}"
         assert main_input_index != -1, "no main input module found"
 
         # check that wires reference existing modules

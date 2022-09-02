@@ -13,7 +13,7 @@ from .models import (
     Level,
     LevelId,
     Module,
-    ModuleTypeId,
+    ModuleId,
     MusicMode,
     PaintColor,
     Painter,
@@ -76,8 +76,8 @@ def write_position(stream: io.BufferedIOBase, pos: Position) -> None:
 
 
 def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
-    type_id = ModuleTypeId(read_int(stream, 4))
-    cls = MODULE_LOOKUP[type_id]
+    module_id = ModuleId(read_int(stream, 4))
+    cls = MODULE_LOOKUP[module_id]
     can_delete = read_bool(stream)
     rack_pos = read_position(stream)
     floor_pos = read_position(stream)
@@ -100,11 +100,11 @@ def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
 
     direction = Direction(read_int(stream, 1))
 
-    return cls(level, type_id, can_delete, rack_pos, floor_pos, direction, **extras)
+    return cls(level, module_id, can_delete, rack_pos, floor_pos, direction, **extras)
 
 
 def write_module(stream: io.BufferedIOBase, module: Module) -> None:
-    write_int(stream, module.type.value, 4)
+    write_int(stream, module.id.value, 4)
     write_bool(stream, module.can_delete)
     write_position(stream, module.rack_position)
     write_position(stream, module.floor_position)
