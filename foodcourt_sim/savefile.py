@@ -9,16 +9,18 @@ from .models import (
     Animatronic,
     BigCounter,
     Direction,
+    Input,
     Level,
+    LevelId,
     Module,
     ModuleTypeId,
     MusicMode,
-    OtherInput,
+    PaintColor,
     Painter,
+    PaintMask,
     Position,
     Sequencer,
     SmallCounter,
-    SolidInput,
     Solution,
     Wire,
 )
@@ -81,7 +83,7 @@ def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
     floor_pos = read_position(stream)
     # pylint: disable-next=protected-access
     extras: dict[str, Any] = {}
-    if issubclass(cls, (SolidInput, OtherInput)):
+    if issubclass(cls, Input):
         extras["input_id"] = read_int(stream, 4)
     elif issubclass(cls, SmallCounter):
         extras["values"] = [read_int(stream, 4) for _ in range(2)]
@@ -91,8 +93,8 @@ def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
         data = read_bytes(stream, 4 * 12)
         extras["rows"] = list(map(list, struct.iter_unpack("4?", data)))
     elif issubclass(cls, Painter):
-        extras["color"] = read_int(stream, 4)
-        extras["mask"] = read_int(stream, 4)
+        extras["color"] = PaintColor(read_int(stream, 4))
+        extras["mask"] = PaintMask(read_int(stream, 4))
     elif issubclass(cls, Animatronic):
         extras["music_mode"] = MusicMode(read_int(stream, 1))
 
@@ -106,7 +108,7 @@ def write_module(stream: io.BufferedIOBase, module: Module) -> None:
     write_bool(stream, module.can_delete)
     write_position(stream, module.rack_position)
     write_position(stream, module.floor_position)
-    if isinstance(module, (SolidInput, OtherInput)):
+    if isinstance(module, Input):
         write_int(stream, module.input_id, 4)
     elif isinstance(module, (SmallCounter, BigCounter)):
         for val in module.values:
@@ -115,8 +117,8 @@ def write_module(stream: io.BufferedIOBase, module: Module) -> None:
         for row in module.rows:
             write_bytes(stream, struct.pack("4?", *row))
     elif isinstance(module, Painter):
-        write_int(stream, module.color, 4)
-        write_int(stream, module.mask, 4)
+        write_int(stream, module.color.value, 4)
+        write_int(stream, module.mask.value, 4)
     elif isinstance(module, Animatronic):
         write_int(stream, module.music_mode.value, 1)
     write_int(stream, module.direction.value, 1)
@@ -145,27 +147,27 @@ def read_solution(data: Union[bytes, io.BufferedIOBase]) -> tuple[Solution, Leve
     version = read_int(stream, 4)
     assert 1000 <= version <= 1013
 
-    level_num = read_int(stream, 4)
+    level_id = LevelId(read_int(stream, 4))
     name = read_string(stream)
 
     solved = read_bool(stream)
     time = read_int(stream, 4)
     cost = read_int(stream, 4)
 
-    level = BY_ID[level_num]
+    level = BY_ID[level_id]
     num_modules = read_int(stream, 4)
     modules = [read_module(stream, level) for _ in range(num_modules)]
 
     num_wires = read_int(stream, 4)
     wires = [read_wire(stream) for _ in range(num_wires)]
 
-    solution = Solution(version, level_num, name, solved, time, cost, modules, wires)
+    solution = Solution(version, level_id, name, solved, time, cost, modules, wires)
     return solution, level
 
 
 def write_solution(stream: io.BufferedIOBase, solution: Solution) -> None:
     write_int(stream, solution.version, 4)
-    write_int(stream, solution.level, 4)
+    write_int(stream, solution.level_id.value, 4)
     write_string(stream, solution.name)
     write_bool(stream, solution.solved)
     write_int(stream, solution.time, 4)

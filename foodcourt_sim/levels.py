@@ -1,221 +1,513 @@
-from .models import Level
+import itertools
+from collections import Counter
+
+from .models import (
+    Burger,
+    ChaatDough,
+    CoatFluid,
+    CookFryer,
+    CookGrill,
+    CookMicrowave,
+    Cup,
+    DispenseFluid,
+    DispenseFluidMixed,
+    DispenseTopping,
+    Dock,
+    Entity,
+    EntityId,
+    Flatten,
+    Level,
+    LevelId,
+    PaintableCup,
+    PaintColor,
+    PizzaDough,
+    ToppingId,
+    WingPlaceholder,
+)
 
 __all__ = ["LEVELS", "BY_ID", "BY_NUMBER"]
 
+
+E = EntityId
+T = ToppingId
+
+
+def order(*components: Entity) -> Entity:
+    return Entity(E.TRAY, stack=list(components))
+
+
+def ith_true(i: int, n: int) -> tuple[bool, ...]:
+    "Return a tuple of length n where the i-th element is True and the rest are False."
+    l = [False] * n
+    l[i] = True
+    return tuple(l)
+
+
+def chaat_helper(dock: bool) -> Entity:
+    ops = []
+    if dock:
+        ops.append(Dock())
+    ops.extend([CookFryer()] * 2)
+    return ChaatDough(operations=ops, sauces={T.TOMATO, T.MINT, T.YOGURT})
+
+
+def meat_3_helper(mac: bool, slaw: bool, greens: bool, beans: bool) -> Entity:
+    dishes = [Entity(E.MEAT, [CookGrill()] * 4)]
+    if mac:
+        dishes.append(Entity(E.BOWL, [DispenseFluid(T.MAC)]))
+    if slaw:
+        dishes.append(Entity(E.BOWL, [DispenseFluid(T.SLAW)]))
+    if greens:
+        dishes.append(Entity(E.BOWL, [DispenseFluid(T.GREENS)]))
+    if beans:
+        dishes.append(Entity(E.BOWL, [DispenseFluid(T.BEANS)]))
+    return order(*dishes)
+
+
+def breakside_helper(count: int, cheese: bool, pickle: bool, tomato: bool) -> Entity:
+    patty = [Entity(E.MEAT, [CookGrill()] * 4)]
+    if cheese:
+        patty.append(Entity(E.CHEESE))
+
+    stack = [*patty] * count
+    if pickle:
+        stack.append(Entity(E.PICKLE))
+    if tomato:
+        stack.append(Entity(E.TOMATO))
+    stack.append(Entity(E.BUN_TOP))
+    return order(Burger(stack=stack))
+
+
+def chaz_cheddar_helper(
+    meat_l: bool, meat_r: bool, veggie_l: bool, veggie_r: bool
+) -> Entity:
+    dough = PizzaDough(
+        operations=[Flatten()] * 2,
+        left_toppings={T.SAUCE, T.CHEESE},
+        right_toppings={T.SAUCE, T.CHEESE},
+    )
+    if meat_l:
+        dough.left_toppings.add(T.MEAT)
+    if meat_r:
+        dough.right_toppings.add(T.MEAT)
+    if veggie_l:
+        dough.left_toppings.add(T.VEGGIE)
+    if veggie_r:
+        dough.right_toppings.add(T.VEGGIE)
+    return order(dough)
+
+
+def nook_helper(order_id: int) -> Entity:
+    cook_times = {
+        E.EGG: 2 if order_id == 0 else 4,
+        E.BACON: 4,
+        E.BANGER: 4,
+        E.TOMATO: 2,
+        E.FUNGUS: 2,
+        E.BLACK: 2,
+        E.BREAD: 1,
+    }
+    return order(*[Entity(id, [CookGrill()] * time) for id, time in cook_times.items()])
+
+
+def bellys_helper(cheese: bool, side_id: EntityId, drink: ToppingId) -> Entity:
+    stack = [Entity(E.MEAT, [CookFryer()] * 4)]
+    if cheese:
+        stack.append(Entity(E.CHEESE))
+    stack.append(Entity(E.BUN_TOP))
+    burger = Burger(stack=stack)
+    cup = Cup(stack=[Entity(E.LID)], contents=Counter({drink: 2}))
+    side = Cup(stack=[Entity(side_id, [CookFryer()] * 4)])
+    return order(burger, cup, side)
+
+
+def nigiri(fish: EntityId) -> Entity:
+    return Entity(E.RICE, stack=[Entity(fish)])
+
+
 LEVELS = [
     Level(
+        id=LevelId.TWO_TWELVE,
         name="2Twelve",
         number=1,
-        internal_name="2twelve",
-        internal_id=1,
-        order_options=[["NACHO", "PRETZEL"]],
-        solid_inputs=[["NACHO"], ["PRETZEL"]],
-        other_inputs=[["CHEESE"]],
+        order_signal_names=["NACHO", "PRETZEL"],
+        entity_inputs=[[E.NACHO], [E.PRETZEL]],
+        topping_inputs=[[T.CHEESE]],
+        orders={
+            (True, False): order(Entity(E.NACHO, [DispenseFluid(T.CHEESE)])),
+            (False, True): order(Entity(E.PRETZEL)),
+        },
     ),
     Level(
+        id=LevelId.HOT_POCKET,
         name="Original Hot Pocket Experience",
         number=2,
-        internal_name="original-hot-pocket-experience",
-        internal_id=2,
-        order_options=[["POCKET"]],
-        solid_inputs=[["POCKET"]],
-        other_inputs=[],
+        order_signal_names=["POCKET"],
+        entity_inputs=[[E.POCKET]],
+        topping_inputs=[],
+        orders={
+            (True,): order(Entity(E.POCKET, [CookMicrowave()] * 4)),
+        },
     ),
     Level(
+        id=LevelId.WINE_OCLOCK,
         name="Wine O'Clock",
         number=3,
-        internal_name="wine-oclock",
-        internal_id=8,
-        order_options=[["RED", "WHITE"]],
-        solid_inputs=[["CUP"]],
-        other_inputs=[["RED", "WHITE"]],
+        order_signal_names=["RED", "WHITE"],
+        entity_inputs=[[E.CUP]],
+        topping_inputs=[[T.RED, T.WHITE]],
+        orders={
+            (True, False): order(Entity(E.GLASS, [DispenseFluid(T.RED)] * 2)),
+            (False, True): order(Entity(E.GLASS, [DispenseFluid(T.WHITE)] * 2)),
+        },
     ),
     Level(
+        id=LevelId.MUMBAI_CHAAT,
         name="Mumbai Chaat",
         number=4,
-        internal_name="mumbai-chaat",
-        internal_id=6,
-        order_options=[["POORI", "PAPDI"]],
-        solid_inputs=[["DOUGH"]],
-        other_inputs=[["TOMATO", "MINT", "YOGURT"]],
+        order_signal_names=["POORI", "PAPDI"],
+        entity_inputs=[[E.DOUGH]],
+        topping_inputs=[[T.TOMATO, T.MINT, T.YOGURT]],
+        orders={
+            ith_true(i, 2): order(chaat_helper(dock))
+            for i, dock in enumerate([False, True])
+        },
     ),
     Level(
+        id=LevelId.MR_CHILLY,
         name="Mr. Chilly",
         number=5,
-        internal_name="mr.-chilly",
-        internal_id=3,
-        order_options=[["CHOCO", "VANILLA", "TWIST"], ["SMALL", "MEDIUM", "LARGE"]],
-        solid_inputs=[["CONE"]],
-        other_inputs=[["CHOCO", "VANILLA"]],
+        order_signal_names=["CHOCO", "VANILLA", "TWIST", "SMALL", "MEDIUM", "LARGE"],
+        entity_inputs=[[E.CONE]],
+        topping_inputs=[[T.CHOCO, T.VANILLA]],
+        orders={
+            (*ith_true(i, 3), *ith_true(j, 3)): order(Entity(E.CONE, [op] * count))
+            for i, op in enumerate(
+                [
+                    DispenseFluid(T.CHOCO),
+                    DispenseFluid(T.VANILLA),
+                    DispenseFluidMixed(T.CHOCO, T.VANILLA),
+                ]
+            )
+            for j, count in enumerate([2, 3, 4])
+        },
     ),
     Level(
+        id=LevelId.KAZAN,
         name="KAZAN",
         number=6,
-        internal_name="kazan",
-        internal_id=5,
-        order_options=[["1 PC.", "3 PCS.", "6 PCS.", "10 PCS.", "15 PCS.", "21 PCS."]],
-        solid_inputs=[["PELMENI"]],
-        other_inputs=[],
+        order_signal_names=[
+            "1 PC.",
+            "3 PCS.",
+            "6 PCS.",
+            "10 PCS.",
+            "15 PCS.",
+            "21 PCS.",
+        ],
+        entity_inputs=[[E.PELMENI]],
+        topping_inputs=[],
+        orders={
+            ith_true(i, 6): order(*[Entity(E.PELMENI)] * count)
+            for i, count in enumerate([1, 3, 6, 10, 15, 21])
+        },
     ),
     Level(
+        id=LevelId.SODA_TRENCH,
         name="Soda Trench",
         number=7,
-        internal_name="soda-trench",
-        internal_id=9,
-        order_options=[["COKE", "DIET C.", "PEPSI", "DIET P."]],
-        solid_inputs=[["CUP", "LID"]],
-        other_inputs=[["COLA"]],
+        order_signal_names=["COKE", "DIET C.", "PEPSI", "DIET P."],
+        entity_inputs=[[E.CUP, E.LID]],
+        topping_inputs=[[T.COLA]],
+        orders={
+            ith_true(i, 4): order(
+                PaintableCup(
+                    stack=[Entity(E.LID)],
+                    contents=Counter({T.COLA: 2}),
+                    colors=[color_1, PaintColor.WHITE, color_2],
+                )
+            )
+            for i, (color_2, color_1) in enumerate(
+                itertools.product(
+                    [PaintColor.RED, PaintColor.BLUE],
+                    [PaintColor.RED, PaintColor.WHITE],
+                )
+            )
+        },
     ),
     Level(
+        id=LevelId.ROSIES_DOUGHNUTS,
         name="Rosie's Doughnuts",
         number=8,
-        internal_name="rosies-doughnuts",
-        internal_id=7,
-        order_options=[["ONE", "SIX", "DOZEN"], ["PLAIN", "CHOCO", "BERRY"]],
-        solid_inputs=[["DOUGH"]],
-        other_inputs=[["CHOCO"], ["BERRY"], ["CANDY"]],
+        order_signal_names=["ONE", "SIX", "DOZEN", "PLAIN", "CHOCO", "BERRY"],
+        entity_inputs=[[E.DOUGH]],
+        topping_inputs=[[T.CHOCO], [T.BERRY], [T.CANDY]],
+        orders={
+            (*ith_true(i, 3), *ith_true(j, 3)): order(
+                *[Entity(E.DOUGH, [*[CookFryer()] * 2, *ops])] * count
+            )
+            for i, ops in enumerate(
+                [
+                    [],
+                    [CoatFluid(T.CHOCO), DispenseTopping(T.CANDY)],
+                    [CoatFluid(T.BERRY), DispenseTopping(T.CANDY)],
+                ]
+            )
+            for j, count in enumerate([1, 6, 12])
+        },
     ),
     Level(
+        id=LevelId.ON_THE_FRIED_SIDE,
         name="On the Fried Side",
         number=9,
-        internal_name="on-the-fried-side",
-        internal_id=4,
-        order_options=[["WHOLE", "HALF", "CUTLET", "LEG"]],
-        solid_inputs=[["CHICKEN"]],
-        other_inputs=[["BREADING"]],
+        order_signal_names=["WHOLE", "HALF", "CUTLET", "LEG"],
+        entity_inputs=[[E.CHICKEN]],
+        topping_inputs=[[T.BREADING]],
+        orders={
+            ith_true(i, 4): order(
+                Entity(id, [CoatFluid(T.BREADING), *[CookFryer()] * cook_time])
+            )
+            for i, (id, cook_time) in enumerate(
+                {
+                    E.CHICKEN: 8,
+                    E.CHICKEN_HALF: 8,
+                    E.CHICKEN_CUTLET: 4,
+                    E.CHICKEN_LEG: 4,
+                }.items()
+            )
+        },
     ),
     Level(
+        id=LevelId.SWEET_HEAT_BBQ,
         name="Sweet Heat BBQ",
         number=10,
-        internal_name="sweet-heat-bbq",
-        internal_id=14,
-        order_options=[["ROAST", "RIBS"], ["200G", "400G", "600G"]],
-        solid_inputs=[["ROAST", "RIBS"]],
-        other_inputs=[],
+        order_signal_names=["ROAST", "RIBS", "200G", "400G", "600G"],
+        entity_inputs=[[E.ROAST, E.RIBS]],
+        topping_inputs=[],
+        orders={
+            (*ith_true(i, 2), *ith_true(j, 3)): order(
+                *[Entity(id)] * (count if id is E.RIBS_SLICE else 2 * count)
+            )
+            for i, id in enumerate([E.ROAST_SLICE, E.RIBS_SLICE])
+            for j, count in enumerate(range(1, 4))
+        },
     ),
     Level(
+        id=LevelId.THE_WALRUS,
         name="The Walrus",
         number=11,
-        internal_name="the-walrus",
-        internal_id=20,
-        order_options=[["WHISKY", "W. SOUR", "HIGHBALL", "COLA"]],
-        solid_inputs=[["ICE"], ["CUP"]],
-        other_inputs=[["VODKA", "WHISKY"], ["COLA", "LEMON"]],
+        order_signal_names=["WHISKY", "W. SOUR", "HIGHBALL", "COLA"],
+        entity_inputs=[[E.ICE], [E.CUP]],
+        topping_inputs=[[T.VODKA, T.WHISKY], [T.COLA, T.LEMON]],
+        orders={
+            ith_true(0, 4): order(Cup(contents=Counter({T.WHISKY: 1}))),
+            ith_true(1, 4): order(
+                Cup(contents=Counter({T.WHISKY: 2, T.LEMON: 1}), stack=[Entity(E.ICE)])
+            ),
+            ith_true(2, 4): order(
+                Cup(
+                    contents=Counter({T.WHISKY: 2, T.LEMON: 1, T.COLA: 2}),
+                    stack=[Entity(E.ICE)],
+                )
+            ),
+            ith_true(3, 4): order(
+                Cup(contents=Counter({T.COLA: 5}), stack=[Entity(E.ICE)])
+            ),
+        },
     ),
     Level(
+        id=LevelId.MEAT_3,
         name="Meat+3",
         number=12,
-        internal_name="meat+3",
-        internal_id=10,
-        order_options=[["MAC"], ["SLAW"], ["GREENS"], ["BEANS"]],
-        solid_inputs=[["MEAT"], ["BOWL"]],
-        other_inputs=[["MAC"], ["SLAW"], ["GREENS"], ["BEANS"]],
+        order_signal_names=["MAC", "SLAW", "GREENS", "BEANS"],
+        entity_inputs=[[E.MEAT], [E.BOWL]],
+        topping_inputs=[[T.MAC], [T.SLAW], [T.GREENS], [T.BEANS]],
+        orders={
+            key: meat_3_helper(*key)
+            for key in [
+                (True, True, True, False),
+                (True, True, False, True),
+                (True, False, True, True),
+                (False, True, True, True),
+            ]
+        },
     ),
     Level(
+        id=LevelId.CAFE_TRISTE,
         name="Cafe Triste",
         number=13,
-        internal_name="cafe-triste",
-        internal_id=13,
-        order_options=[["DU JOUR"]],
-        solid_inputs=[["PAPER"], ["CUP"]],
-        other_inputs=[["LEAVES"]],
+        order_signal_names=["DU JOUR"],
+        entity_inputs=[[E.PAPER], [E.CUP]],
+        topping_inputs=[[T.LEAVES]],
+        orders={
+            (True,): order(
+                Cup(contents=Counter({T.COFFEE: 1})), *[Entity(E.CIGARETTE)] * 8
+            )
+        },
     ),
     Level(
+        id=LevelId.THE_COMMISSARY,
         name="The Commissary",
         number=14,
-        internal_name="the-commissary",
-        internal_id=15,
-        order_options=[["MON.", "TUES.", "WED.", "THUR.", "FRI."]],
-        solid_inputs=[
-            ["PIZZA", "BURGER", "TENDER", "CORNDOC", "CURLY", "CRINKLE", "TOT"],
-            ["PLAIN", "CHOCO"],
+        order_signal_names=["MON.", "TUES.", "WED.", "THUR.", "FRI."],
+        entity_inputs=[
+            [E.PIZZA, E.BURGER, E.TENDER, E.CORNDOG, E.CURLY, E.CRINKLE, E.TOT],
+            [E.PLAIN, E.CHOCO],
         ],
-        other_inputs=[],
+        topping_inputs=[],
+        orders={
+            ith_true(0, 5): order(
+                Entity(E.TENDER, [CookFryer()] * 4),
+                Entity(E.CRINKLE, [CookFryer()] * 4),
+                Entity(E.CHOCO),
+            ),
+            ith_true(1, 5): order(
+                Entity(E.BURGER, [CookMicrowave()] * 4),
+                Entity(E.TOT, [CookFryer()] * 4),
+                Entity(E.PLAIN),
+            ),
+            ith_true(2, 5): order(
+                Entity(E.CORNDOG, [CookFryer()] * 4),
+                Entity(E.TOT, [CookFryer()] * 4),
+                Entity(E.CHOCO),
+            ),
+            ith_true(3, 5): order(
+                Entity(E.TENDER, [CookFryer()] * 4),
+                Entity(E.CURLY, [CookFryer()] * 4),
+                Entity(E.PLAIN),
+            ),
+            ith_true(4, 5): order(
+                Entity(E.PIZZA, [CookMicrowave()] * 4),
+                Entity(E.CRINKLE, [CookFryer()] * 4),
+                Entity(E.CHOCO),
+            ),
+        },
     ),
     Level(
+        id=LevelId.DA_WINGS,
         name="Da Wings",
         number=15,
-        internal_name="da-wings",
-        internal_id=11,
-        order_options=[["3 PCS.", "6 PCS.", "9 PCS."]],
-        solid_inputs=[["CHICKEN"]],
-        other_inputs=[["SAUCE"]],
+        order_signal_names=["3 PCS.", "6 PCS.", "9 PCS."],
+        entity_inputs=[[E.CHICKEN]],
+        topping_inputs=[[T.SAUCE]],
+        orders={
+            ith_true(i, 3): order(
+                *[
+                    WingPlaceholder(
+                        operations=[*[CookFryer()] * 2, CoatFluid(T.SAUCE)],
+                    )
+                ]
+                * count
+            )
+            for i, count in enumerate([3, 6, 9])
+        },
     ),
     Level(
+        id=LevelId.BREAKSIDE_GRILL,
         name="Breakside Grill",
         number=16,
-        internal_name="breakside-grill",
-        internal_id=18,
-        order_options=[
-            ["SINGLE", "DOUBLE", "TRIPLE"],
-            ["CHEESE"],
-            ["PICKLE"],
-            ["TOMATO"],
-        ],
-        solid_inputs=[["MEAT"], ["BUN"], ["CHEESE", "PICKLE", "TOMATO"]],
-        other_inputs=[],
+        order_signal_names=["SINGLE", "DOUBLE", "TRIPLE", "CHEESE", "PICKLE", "TOMATO"],
+        entity_inputs=[[E.MEAT], [E.BUN], [E.CHEESE, E.PICKLE, E.TOMATO]],
+        topping_inputs=[],
+        orders={
+            (*ith_true(count - 1, 3), *options): breakside_helper(count, *options)
+            for count in range(1, 4)
+            for options in itertools.product([False, True], repeat=3)
+        },
     ),
     Level(
+        id=LevelId.CHAZ_CHEDDAR,
         name="Chaz Cheddar",
         number=17,
-        internal_name="chaz-cheddar",
-        internal_id=16,
-        order_options=[["MEAT L."], ["MEAT R."], ["VEGGIE L."], ["VEGGIE R."]],
-        solid_inputs=[["DOUGH"]],
-        other_inputs=[["SAUCE"], ["CHEESE"], ["MEAT"], ["VEGGIE"]],
+        order_signal_names=["MEAT L.", "MEAT R.", "VEGGIE L.", "VEGGIE R."],
+        entity_inputs=[[E.DOUGH]],
+        topping_inputs=[[T.SAUCE], [T.CHEESE], [T.MEAT], [T.VEGGIE]],
+        orders={
+            key: chaz_cheddar_helper(*key)
+            for meat_l, veggie_l, meat_r, veggie_r in itertools.product(
+                [False, True], repeat=4
+            )
+            for key in [(meat_l, meat_r, veggie_l, veggie_r)]
+        },
     ),
     Level(
+        id=LevelId.HALF_CAFF_COFFEE,
         name="Half Caff Coffee",
         number=18,
-        internal_name="half-caff-coffee",
-        internal_id=17,
-        order_options=[["ESPRE.", "DOPPIO", "LATTE", "CAPP.", "AMER."]],
-        solid_inputs=[["CUP"]],
-        other_inputs=[["MILK"], ["WATER"]],
+        order_signal_names=["ESPRE.", "DOPPIO", "LATTE", "CAPP.", "AMER."],
+        entity_inputs=[[E.CUP]],
+        topping_inputs=[[T.MILK], [T.WATER]],
+        orders={
+            ith_true(0, 5): order(Cup(contents=Counter({T.COFFEE: 1}))),
+            ith_true(1, 5): order(Cup(contents=Counter({T.COFFEE: 2}))),
+            ith_true(2, 5): order(
+                Cup(contents=Counter({T.COFFEE: 1, T.MILK: 2, T.FOAM: 1}))
+            ),
+            ith_true(3, 5): order(
+                Cup(contents=Counter({T.COFFEE: 1, T.MILK: 1, T.FOAM: 2}))
+            ),
+            ith_true(4, 5): order(Cup(contents=Counter({T.COFFEE: 1, T.WATER: 3}))),
+        },
     ),
     Level(
+        id=LevelId.MILDREDS_NOOK,
         name="Mildred's Nook",
         number=19,
-        internal_name="mildreds-nook",
-        internal_id=19,
-        order_options=[["SOFT", "HARD"]],
-        solid_inputs=[
-            ["EGG"],
-            ["BACON", "BANGER"],
-            ["TOMATO", "FUNGUS", "BLACK"],
-            ["BREAD"],
+        order_signal_names=["SOFT", "HARD"],
+        entity_inputs=[
+            [E.EGG],
+            [E.BACON, E.BANGER],
+            [E.TOMATO, E.FUNGUS, E.BLACK],
+            [E.BREAD],
         ],
-        other_inputs=[["BEANS"]],
+        topping_inputs=[[T.BEANS]],
+        orders={ith_true(i, 2): nook_helper(i) for i in range(2)},
     ),
     Level(
+        id=LevelId.BELLYS,
         name="Belly's",
         number=20,
-        internal_name="bellys",
-        internal_id=12,
-        order_options=[
-            ["PLAIN", "CHEESE"],
-            ["ORANGE", "PURPLE"],
-            ["POTATO", "ONION"],
+        order_signal_names=["PLAIN", "CHEESE", "ORANGE", "PURPLE", "POTATO", "ONION"],
+        entity_inputs=[
+            [E.MEAT, E.POTATO, E.ONION],
+            [E.BUN, E.CHEESE],
+            [E.CUP, E.LID],
         ],
-        solid_inputs=[
-            ["MEAT", "POTATO", "ONION"],
-            ["BUN", "CHEESE"],
-            ["CUP", "LID"],
-        ],
-        other_inputs=[["ORANGE", "PURPLE"]],
+        topping_inputs=[[T.ORANGE, T.PURPLE]],
+        orders={
+            (*ith_true(i, 2), *ith_true(k, 2), *ith_true(j, 2)): bellys_helper(
+                cheese=cheese, side_id=side_id, drink=drink
+            )
+            for i, cheese in enumerate([False, True])
+            for j, side_id in enumerate([E.POTATO, E.ONION])
+            for k, drink in enumerate([T.ORANGE, T.PURPLE])
+        },
     ),
     Level(
+        id=LevelId.SUSHI_YEAH,
         name="Sushi Yeah!",
         number=21,
-        internal_name="sushi-yeah!",
-        internal_id=21,
-        order_options=[
-            ["T. MAKI", "S. MAKI", "T. NIGIRI", "S. NIGIRI", "SASHIMI", "SOUP"]
+        order_signal_names=[
+            "T. MAKI",
+            "S. MAKI",
+            "T. NIGIRI",
+            "S. NIGIRI",
+            "SASHIMI",
+            "SOUP",
         ],
-        solid_inputs=[["NORI", "RICE"], ["TUNA", "SALMON"], ["PLATE", "BOWL"]],
-        other_inputs=[["SOUP"]],
+        entity_inputs=[[E.NORI, E.RICE], [E.TUNA, E.SALMON], [E.PLATE, E.BOWL]],
+        topping_inputs=[[T.SOUP]],
+        orders={
+            ith_true(0, 6): order(Entity(E.PLATE, stack=[Entity(E.TUNA_ROLL)] * 4)),
+            ith_true(1, 6): order(Entity(E.PLATE, stack=[Entity(E.SALMON_ROLL)] * 4)),
+            ith_true(2, 6): order(Entity(E.PLATE, stack=[nigiri(E.TUNA)] * 2)),
+            ith_true(3, 6): order(Entity(E.PLATE, stack=[nigiri(E.SALMON)] * 2)),
+            ith_true(4, 6): order(
+                Entity(E.BOWL, stack=[nigiri(E.TUNA), nigiri(E.SALMON)])
+            ),
+            ith_true(5, 6): order(Entity(E.BOWL, [DispenseFluid(T.SOUP)])),
+        },
     ),
 ]
 
+BY_ID = {level.id: level for level in LEVELS}
 BY_NUMBER = {level.number: level for level in LEVELS}
-BY_ID = {level.internal_id: level for level in LEVELS}
