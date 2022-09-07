@@ -2,11 +2,24 @@
 from __future__ import annotations
 
 import functools
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
 from enum import Enum, auto, unique
-from typing import Any, NamedTuple, Type
+from typing import Any, NamedTuple, Optional
+
+
+class EmergencyStop(Exception):
+    def __init__(self, message: str, *positions: Position):
+        self.message = message
+        assert len(positions) > 0
+        self.positions = [pos.copy() for pos in positions]
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        if len(self.positions) == 1:
+            return f"{self.positions[0]}: {self.message}"
+        return f"[{', '.join(map(str, self.positions))}]: {self.message}"
 
 
 # from enum docs
@@ -32,9 +45,30 @@ class OrderedEnum(Enum):
         return NotImplemented
 
 
-class Position(NamedTuple):
+@dataclass
+class Position:
+    # origin is at lower left corner
     column: int
     row: int
+
+    def __str__(self) -> str:
+        return f"({self.column}, {self.row})"
+
+    def copy(self) -> Position:
+        return Position(self.column, self.row)
+
+    def astuple(self) -> tuple[int, int]:
+        return self.column, self.row
+
+    def shift_by(self, direction: Direction) -> None:
+        if direction is Direction.RIGHT:
+            self.column += 1
+        elif direction is Direction.LEFT:
+            self.column -= 1
+        elif direction is Direction.UP:
+            self.row += 1
+        elif direction is Direction.DOWN:
+            self.row -= 1
 
 
 @unique
@@ -50,9 +84,15 @@ class JackDirection(Enum):
     IN = 1
     OUT = 2
 
+    def opposite(self) -> JackDirection:
+        if self is JackDirection.IN:
+            return JackDirection.OUT
+        if self is JackDirection.OUT:
+            return JackDirection.IN
+        assert False
 
-@dataclass
-class Jack:
+
+class Jack(NamedTuple):
     name: str
     direction: JackDirection
 
@@ -66,29 +106,32 @@ def OutJack(name: str) -> Jack:
     return Jack(name, JackDirection.OUT)
 
 
-@unique
-class LevelId(Enum):
-    TWO_TWELVE = 1
-    HOT_POCKET = 2
-    WINE_OCLOCK = 8
-    MUMBAI_CHAAT = 6
-    MR_CHILLY = 3
-    KAZAN = 5
-    SODA_TRENCH = 9
-    ROSIES_DOUGHNUTS = 7
-    ON_THE_FRIED_SIDE = 4
-    SWEET_HEAT_BBQ = 14
-    THE_WALRUS = 20
-    MEAT_3 = 10
-    CAFE_TRISTE = 13
-    THE_COMMISSARY = 15
-    DA_WINGS = 11
-    BREAKSIDE_GRILL = 18
-    CHAZ_CHEDDAR = 16
-    HALF_CAFF_COFFEE = 17
-    MILDREDS_NOOK = 19
-    BELLYS = 12
-    SUSHI_YEAH = 21
+class Action:
+    pass
+
+
+@dataclass
+class MoveEntity(Action):
+    """Emergency stops if `force` and the entity would collide with another entity."""
+
+    entity: Entity
+    direction: Direction
+    force: bool = True
+
+
+@dataclass
+class SpawnEntity(Action):
+    entity_id: EntityId
+    position: Position
+
+
+@dataclass
+class RemoveEntity(Action):
+    entity: Entity
+
+
+class FinishLevel(Action):
+    pass
 
 
 @unique
@@ -111,24 +154,24 @@ class ModuleId(Enum):
     ROUTER = 31
     SORTER = 32
     STACKER = 33
-    WASTE_BIN = 34
+    WASTE_BIN = 34  # limit 2 for sweet heat bbq
     DOUBLE_SLICER = 35  # sweet heat bbq, cafe triste, sushi yeah!
     TRIPLE_SLICER = 36  # on the fried side, da wings
-    ROTATOR = 37
-    ESPRESSO = 38
-    ROLLER = 40
-    DOCKER = 41
-    FLATTENER = 42
-    PAINTER = 43
-    MICROWAVE = 45
-    GRILL = 46
-    FRYER = 47
+    ROTATOR = 37  # chaz cheddar
+    ESPRESSO = 38  # cafe triste, half caff coffee
+    ROLLER = 40  # cafe triste
+    DOCKER = 41  # mumbai chaat
+    FLATTENER = 42  # chaz cheddar
+    PAINTER = 43  # soda trench
+    MICROWAVE = 45  # hot pocket, the commissary
+    GRILL = 46  # meat+3, breakside grill, mildred's nook
+    FRYER = 47  # mumbai chaat, rosie's doughnuts, on the fried side, the commissary, da wings, belly's
     HALF_TOPPING_DISPENSER = 48  # chaz cheddar
     FREEZER_1X = 49
     FREEZER_7X = 51
     ANIMATRONIC = 52
-    TOPPING_DISPENSER = 53  # candy sprinkler for doughnuts, breadcrumbs for chicken
-    HORIZONTAL_SLICER = 54  # breakside grill, bellys
+    TOPPING_DISPENSER = 53  # candy sprinkler for doughnuts
+    HORIZONTAL_SLICER = 54  # breakside grill, belly's
     FREEZER_3X = 55
 
     TWO_TWELVE_INPUT = 200
@@ -181,6 +224,7 @@ class Module:
     rack_width = 1
     on_rack = True
     on_floor = True
+    price = 0
     jacks = []  # type: ignore
 
     level: InitVar[Level]
@@ -203,167 +247,12 @@ class Module:
             assert self.rack_position.column >= 0
             assert self.rack_position.column + self.rack_width <= 11
 
+        if not self.on_rack:
+            assert not self.jacks, str(self.jacks)
 
-@dataclass
-class Scanner(Module):
-    _MODULE_IDS = [ModuleId(149 + id.value) for id in LevelId]
-    rack_width = 2
-
-    def __post_init__(self, level: Level) -> None:
-        self.jacks = [OutJack("START")]
-        for options in level.order_signal_names:
-            for name in options:
-                self.jacks.append(OutJack(name))
-
-
-class MainInput(Scanner):
-    _MODULE_IDS = [ModuleId(199 + id.value) for id in LevelId]
-
-
-@dataclass
-class Input(Module):
-    input_id: int
-
-
-class EntityInput(Input):
-    _MODULE_IDS = [ModuleId.INPUT_1X, ModuleId.INPUT_2X, ModuleId.INPUT_3X]
-
-    def __post_init__(self, level: Level) -> None:
-        self.jacks = [InJack(eid.name) for eid in level.entity_inputs[self.input_id]]
-
-
-class Freezer(EntityInput):
-    _MODULE_IDS = [
-        ModuleId.FREEZER_1X,
-        ModuleId.FREEZER_3X,
-        ModuleId.FREEZER_7X,
-    ]
-    rack_width = 2
-
-
-class ToppingInput(Input):
-    def __post_init__(self, level: Level) -> None:
-        self.jacks = [InJack(tid.name) for tid in level.topping_inputs[self.input_id]]
-
-
-class FluidDispenser(ToppingInput):
-    _MODULE_IDS = [
-        ModuleId.FLUID_DISPENSER_1X,
-        ModuleId.FLUID_DISPENSER_2X,
-        ModuleId.FLUID_DISPENSER_3X,
-    ]
-
-
-class FluidCoater(ToppingInput):
-    _MODULE_IDS = [ModuleId.FLUID_COATER]
-    on_rack = False
-
-
-class ToppingDispenser(ToppingInput):
-    _MODULE_IDS = [ModuleId.TOPPING_DISPENSER, ModuleId.HALF_TOPPING_DISPENSER]
-
-
-class SimpleMachine(Module):
-    _MODULE_IDS = [
-        ModuleId.CONVEYOR,
-        ModuleId.OUTPUT,
-        ModuleId.WASTE_BIN,
-        ModuleId.DOUBLE_SLICER,
-        ModuleId.HORIZONTAL_SLICER,
-        ModuleId.TRIPLE_SLICER,
-        ModuleId.ROTATOR,
-        ModuleId.ROLLER,
-        ModuleId.DOCKER,
-        ModuleId.FLATTENER,
-    ]
-    on_rack = False
-
-
-class Router(Module):
-    _MODULE_IDS = [ModuleId.ROUTER]
-    jacks = [InJack(name) for name in ["LEFT", "THRU", "RIGHT"]]
-
-
-class Sensor(Module):
-    _MODULE_IDS = [ModuleId.SENSOR]
-    jacks = [OutJack("SENSE")]
-
-
-class Sorter(Module):
-    _MODULE_IDS = [ModuleId.SORTER]
-    jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
-
-
-class Cooker(Module):
-    _MODULE_IDS = [ModuleId.GRILL, ModuleId.FRYER, ModuleId.MICROWAVE]
-    jacks = [OutJack("SENSE"), InJack("EJECT")]
-
-
-class Stacker(Module):
-    _MODULE_IDS = [ModuleId.STACKER]
-    jacks = [OutJack("STACK"), InJack("EJECT")]
-
-
-class Multimixer(Module):
-    _MODULE_IDS = [ModuleId.MULTIMIXER, ModuleId.MULTIMIXER_ENABLE]
-    on_floor = False
-
-    def __post_init__(self, level: Level) -> None:
-        del level
-        if self.id is ModuleId.MULTIMIXER:
-            self.jacks = [
-                *[InJack(f"IN_{i+1}") for i in range(4)],
-                *[OutJack(f"OUT_{i+1}") for i in range(4)],
-            ]
-        else:
-            assert self.id is ModuleId.MULTIMIXER_ENABLE
-            self.jacks = [
-                InJack("enable"),
-                *[InJack(f"IN_{i+1}") for i in range(3)],
-                *[OutJack(f"OUT_{i+1}") for i in range(3)],
-            ]
-
-
-@dataclass
-class SmallCounter(Module):
-    _MODULE_IDS = [ModuleId.SMALL_COUNTER]
-    on_floor = False
-    jacks = [OutJack("ZERO"), InJack("IN_1"), InJack("IN_2")]
-
-    values: list[int]
-
-
-@dataclass
-class BigCounter(Module):
-    _MODULE_IDS = [ModuleId.BIG_COUNTER]
-    on_floor = False
-    jacks = [
-        OutJack("ZERO"),
-        OutJack("POS"),
-        InJack("IN_1"),
-        InJack("IN_2"),
-        InJack("IN_3"),
-        InJack("IN_4"),
-    ]
-
-    values: list[int]
-
-
-@dataclass
-class Sequencer(Module):
-    _MODULE_IDS = [ModuleId.SEQUENCER]
-    on_floor = False
-    rack_width = 2
-    jacks = [
-        InJack("START"),
-        InJack("STOP"),
-        OutJack("A"),
-        OutJack("B"),
-        OutJack("C"),
-        OutJack("D"),
-    ]
-
-    rows: list[list[bool]]
+    def update(self, target: Optional[Entity]) -> list[Action]:
+        """Update internal state and output signals for a single tick."""
+        return []
 
 
 @unique
@@ -381,61 +270,10 @@ class PaintMask(Enum):
     LOWER_2 = 3
 
 
-@dataclass
-class Painter(Module):
-    _MODULE_IDS = [ModuleId.PAINTER]
-
-    color: PaintColor
-    mask: PaintMask
-
-
-@dataclass
-class Espresso(Module):
-    _MODULE_IDS = [ModuleId.ESPRESSO]
-    jacks = [InJack(name) for name in ["GRIND", "XTRACT", "STEAM", "EJECT"]]
-
-
 @unique
 class MusicMode(Enum):
-    lead = 0
-    bass = 1
-
-
-@dataclass
-class Animatronic(Module):
-    _MODULE_IDS = [ModuleId.ANIMATRONIC]
-    rack_width = 2
-    jacks = [
-        InJack(name) for name in ["DANCE", "SING", "GLASSES", "I", "IV", "V", "I'"]
-    ]
-
-    music_mode: MusicMode
-
-
-def populate_module_table() -> dict[ModuleId, Type[Module]]:
-    lookup: dict[ModuleId, Type[Module]] = {}
-    # dynamically pick up all Module subclasses in this module
-    for value in globals().values():
-        if (
-            isinstance(value, type)
-            and issubclass(value, Module)
-            and hasattr(value, "_MODULE_IDS")
-        ):
-            # pylint: disable-next=protected-access
-            for module_id in value._MODULE_IDS:  # type: ignore  # dynamically checked
-                assert isinstance(module_id, ModuleId)
-                assert (
-                    module_id not in lookup
-                ), f"{module_id} is claimed by {lookup[module_id]} and {value}"
-                lookup[module_id] = value
-
-    assert lookup.keys() == set(
-        ModuleId
-    ), f"unhandled module ids: {set(ModuleId) - lookup.keys()}"
-    return lookup
-
-
-MODULE_LOOKUP = populate_module_table()
+    LEAD = 0
+    BASS = 1
 
 
 class Wire(NamedTuple):
@@ -445,7 +283,32 @@ class Wire(NamedTuple):
     jack_2: int
 
 
-@dataclass
+@unique
+class LevelId(Enum):
+    TWO_TWELVE = 1
+    HOT_POCKET = 2
+    WINE_OCLOCK = 8
+    MUMBAI_CHAAT = 6
+    MR_CHILLY = 3
+    KAZAN = 5
+    SODA_TRENCH = 9
+    ROSIES_DOUGHNUTS = 7
+    ON_THE_FRIED_SIDE = 4
+    SWEET_HEAT_BBQ = 14
+    THE_WALRUS = 20
+    MEAT_3 = 10
+    CAFE_TRISTE = 13
+    THE_COMMISSARY = 15
+    DA_WINGS = 11
+    BREAKSIDE_GRILL = 18
+    CHAZ_CHEDDAR = 16
+    HALF_CAFF_COFFEE = 17
+    MILDREDS_NOOK = 19
+    BELLYS = 12
+    SUSHI_YEAH = 21
+
+
+@dataclass(repr=False)
 class Solution:  # pylint: disable=too-many-instance-attributes
     version: int
     level_id: LevelId
@@ -453,8 +316,32 @@ class Solution:  # pylint: disable=too-many-instance-attributes
     solved: bool
     time: int
     cost: int
-    modules: list[Module]
-    wires: list[Wire]
+    modules: list[Module] = field(repr=False)
+    wires: list[Wire] = field(repr=False)
+
+    def __repr__(self) -> str:
+        lines = []
+        lines.append("Solution(")
+        lines.append(f"  version={self.version!r},")
+        lines.append(f"  level_id={self.level_id!r},")
+        lines.append(f"  name={self.name!r},")
+        lines.append(f"  solved={self.solved!r},")
+        if self.solved:
+            lines.append(f"  time={self.time!r},")
+            lines.append(f"  cost={self.cost!r},")
+
+        lines.append("  modules=[")
+        for module in self.modules:
+            lines.append(f"    {module!r},")
+        lines.append("  ],")
+
+        lines.append("  wires=[")
+        for wire in self.wires:
+            lines.append(f"    {wire!r},")
+        lines.append("  ]")
+        lines.append(")")
+
+        return "\n".join(lines)
 
     def dump_wires_to(self, arg: Any) -> None:
         """used for reverse engineering"""
@@ -481,8 +368,7 @@ class Solution:  # pylint: disable=too-many-instance-attributes
             if wire.jack_2 < len(module_2.jacks):
                 j2 = module_2.jacks[wire.jack_2]
                 jack_2 = repr(j2.name.upper())
-                other_direction = JackDirection(3 - j2.direction.value)
-                jack_1 += f" ({other_direction.name})".ljust(6)
+                jack_1 += f" ({j2.direction.opposite().name})".ljust(6)
             print(
                 f"jack {jack_1} to jack {jack_2} of {module_2.id} (index {wire.module_2})"
             )
@@ -490,10 +376,13 @@ class Solution:  # pylint: disable=too-many-instance-attributes
     def check(self, level: Level) -> None:
         assert level.id == self.level_id
 
-        # make sure main input and scanners match the level
         main_input_index = -1
+        occupied_rack_slots = [[False] * 11 for _ in range(3)]
+        module_indices: dict[ModuleId, list[int]] = defaultdict(list)
+        cost = 0
         for i, module in enumerate(self.modules):
             module.check()
+            # make sure main input and scanners match the level
             if 200 <= module.id.value <= 220:
                 assert (
                     main_input_index == -1
@@ -506,7 +395,22 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                 assert (
                     module.id.value == level.id.value + 149
                 ), f"incorrect scanner ({module.id}) for level {level.internal_name} at index {i}"
+            # check for rack collisions
+            if module.on_rack:
+                pos = module.rack_position
+                assert not (
+                    occupied_rack_slots[pos.row][pos.column]
+                ), f"rack collision at {module.rack_position}"
+                for i in range(module.rack_width):
+                    occupied_rack_slots[pos.row][pos.column + i] = True
+            module_indices[module.id].append(i)
+            cost += module.price
         assert main_input_index != -1, "no main input module found"
+
+        if level.id is LevelId.SWEET_HEAT_BBQ:
+            assert (
+                len(module_indices[ModuleId.WASTE_BIN]) <= 2
+            ), "too many waste bins for Sweet Heat BBQ (limit of 2)"
 
         # check that wires reference existing modules
         num_modules = len(self.modules)
@@ -522,8 +426,18 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                 0 <= wire.jack_2 < len(module_2.jacks)
             ), f"{module_2}, jack {wire.jack_2}"
 
+            # check that in jacks are only connected to out jacks and vice versa
+            assert (
+                module_1.jacks[wire.jack_1].direction
+                is not module_2.jacks[wire.jack_2].direction
+            ), f"{module_1}, jack {wire.jack_1} is connected to {module_2}, jack {wire.jack_2} with the same direction"
 
-class Level(NamedTuple):
+        if self.solved:
+            assert self.cost == cost, "calculated cost doesn't match recorded cost"
+
+
+@dataclass
+class Level:
     # included in save files, starts from 1, doesn't follow in-game order
     id: LevelId
     # human-readable name
@@ -536,17 +450,23 @@ class Level(NamedTuple):
     entity_inputs: list[list[EntityId]]
     # used for FLUID_DISPENSER_*, FLUID_COATER, TOPPING_DISPENSER, HALF_TOPPING_DISPENSER
     topping_inputs: list[list[ToppingId]]
-    # final products of each order, keyed by order signals
-    orders: dict[tuple[bool, ...], Entity]
+    orders: InitVar[dict[tuple[bool, ...], Entity]]
+    # order signals for each order
+    order_signals: list[tuple[bool, ...]] = field(init=False)
+    # final products for each order
+    order_products: list[Entity] = field(init=False)
+
+    def __post_init__(self, orders):
+        self.order_signals = list(orders.keys())
+        self.order_products = [orders[sig] for sig in self.order_signals]
+
+    def __len__(self) -> int:
+        return len(self.order_signals)
 
     @property
     def internal_name(self) -> str:
         # prefix for save file name
         return self.name.lower().replace(" ", "-").replace("'", "")
-
-    @property
-    def order_list(self) -> list[tuple[tuple[bool, ...], Entity]]:
-        return list(self.orders.items())
 
 
 # simulation-only objects
@@ -558,10 +478,7 @@ class OperationId(OrderedEnum):
     COOK_MICROWAVE = auto()
     COOK_GRILL = auto()
     DOCK = auto()
-    ROLL = auto()
     FLATTEN = auto()
-    ESPRESSO_EXTRACT = auto()
-    ESPRESSO_STEAM = auto()
     DISPENSE_FLUID = auto()
     DISPENSE_FLUID_MIXED = auto()
     COAT_FLUID = auto()
@@ -587,10 +504,6 @@ def CookGrill() -> Operation:
 
 def Dock() -> Operation:
     return Operation(OperationId.DOCK)
-
-
-def Roll() -> Operation:
-    return Operation(OperationId.ROLL)
 
 
 def Flatten() -> Operation:
@@ -639,7 +552,7 @@ class EntityId(OrderedEnum):
     NACHO = auto()  # 2twelve
     PRETZEL = auto()  # 2twelve
 
-    POCKET = auto()  # original hot pocket experience
+    POCKET = auto()  # hot pocket
 
     GLASS = auto()  # wine o'clock
 
@@ -877,7 +790,6 @@ class PizzaDough(Entity):
     """Pizza dough for Chaz Cheddar."""
 
     id: EntityId = EntityId.DOUGH
-    # TODO: rotate by swapping left_toppings and right_toppings
     left_toppings: set[ToppingId] = field(default_factory=set)
     right_toppings: set[ToppingId] = field(default_factory=set)
 
@@ -917,8 +829,7 @@ class State:
     @classmethod
     def from_solution(cls, level: Level, solution: Solution, order_index: int) -> State:
         assert solution.level_id == level.id
-        order_signals = list(level.orders.keys())[order_index]
-        return cls(deepcopy(solution.modules), [], order_signals)
+        return cls(deepcopy(solution.modules), [], level.order_signals[order_index])
 
     def add_entity(self, entity: Entity) -> None:
         self.entities.append(entity)

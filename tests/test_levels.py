@@ -9,7 +9,7 @@ from foodcourt_sim.models import *
 
 def test_2twelve():
     level = BY_ID[LevelId.TWO_TWELVE]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.NACHO, [DispenseFluid(T.CHEESE)])) == orders[1]
@@ -21,7 +21,7 @@ def test_2twelve():
 
 def test_hot_pocket():
     level = BY_ID[LevelId.HOT_POCKET]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.POCKET, [CookMicrowave()]*4)) == orders[1]
@@ -30,7 +30,7 @@ def test_hot_pocket():
 
 def test_wine_oclock():
     level = BY_ID[LevelId.WINE_OCLOCK]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.GLASS, [DispenseFluid(T.RED)]*2)) == orders[1]
@@ -40,7 +40,7 @@ def test_wine_oclock():
 
 def test_mumbai_chaat():
     level = BY_ID[LevelId.MUMBAI_CHAAT]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(ChaatDough(operations=[CookFryer()]*2, sauces={T.TOMATO, T.MINT, T.YOGURT})) == orders[1]
@@ -50,7 +50,7 @@ def test_mumbai_chaat():
 
 def test_mr_chilly():
     level = BY_ID[LevelId.MR_CHILLY]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.CONE, [DispenseFluid(T.CHOCO)]*2)) == orders[1]
@@ -70,7 +70,7 @@ def test_mr_chilly():
 
 def test_kazan():
     level = BY_ID[LevelId.KAZAN]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(*[Entity(E.PELMENI)]*1) == orders[1]
@@ -84,7 +84,7 @@ def test_kazan():
 
 def test_soda_trench():
     level = BY_ID[LevelId.SODA_TRENCH]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(PaintableCup(stack=[Entity(E.LID)], contents=Counter({T.COLA: 2}), colors=[PaintColor.RED,   PaintColor.WHITE, PaintColor.RED])) == orders[1]
@@ -98,7 +98,7 @@ def test_soda_trench():
 
 def test_rosies_doughnuts():
     level = BY_ID[LevelId.ROSIES_DOUGHNUTS]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(*[Entity(E.DOUGH, [*[CookFryer()]*2])]*1) == orders[1]
@@ -115,7 +115,7 @@ def test_rosies_doughnuts():
 
 def test_on_the_fried_side():
     level = BY_ID[LevelId.ON_THE_FRIED_SIDE]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.CHICKEN,        [CoatFluid(T.BREADING), *[CookFryer()]*8])) == orders[1]
@@ -127,7 +127,7 @@ def test_on_the_fried_side():
 
 def test_sweet_heat_bbq():
     level = BY_ID[LevelId.SWEET_HEAT_BBQ]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(*[Entity(E.ROAST_SLICE)]*2) == orders[1]
@@ -141,7 +141,7 @@ def test_sweet_heat_bbq():
 
 def test_the_walrus():
     level = BY_ID[LevelId.THE_WALRUS]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Cup(contents=Counter({T.WHISKY: 1}))) == orders[1]
@@ -153,7 +153,7 @@ def test_the_walrus():
 
 def test_meat_3():
     level = BY_ID[LevelId.MEAT_3]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(
@@ -198,7 +198,7 @@ def test_meat_3():
 
 def test_cafe_triste():
     level = BY_ID[LevelId.CAFE_TRISTE]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(*[Entity(E.CIGARETTE)]*8, Cup(contents=Counter({T.COFFEE: 1}))) == orders[1]
@@ -211,7 +211,7 @@ def test_cafe_triste():
 
 def test_the_commissary():
     level = BY_ID[LevelId.THE_COMMISSARY]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(
@@ -244,7 +244,7 @@ def test_the_commissary():
 
 def test_da_wings():
     level = BY_ID[LevelId.DA_WINGS]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     parts = [E.CHICKEN_CUTLET, E.CHICKEN_LEG]
     for ids in itertools.combinations_with_replacement(parts, r=3):
@@ -263,7 +263,7 @@ def test_da_wings():
 
 def test_breakside():
     level = BY_ID[LevelId.BREAKSIDE_GRILL]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Burger(stack=[
@@ -283,7 +283,7 @@ def test_breakside():
 
 def test_chaz_cheddar():
     level = BY_ID[LevelId.CHAZ_CHEDDAR]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     plain = {T.SAUCE, T.CHEESE}
     veg = plain | {T.VEGGIE}
@@ -310,7 +310,7 @@ def test_chaz_cheddar():
 
 def test_half_caff_coffee():
     level = BY_ID[LevelId.HALF_CAFF_COFFEE]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Cup(contents=Counter({T.COFFEE: 1}))) == orders[1]
@@ -323,7 +323,7 @@ def test_half_caff_coffee():
 
 def test_mildreds_nook():
     level = BY_ID[LevelId.MILDREDS_NOOK]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(
@@ -349,7 +349,7 @@ def test_mildreds_nook():
 
 def test_bellys():
     level = BY_ID[LevelId.BELLYS]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(
@@ -397,7 +397,7 @@ def test_bellys():
 
 def test_sushi_yeah():
     level = BY_ID[LevelId.SUSHI_YEAH]
-    orders = [Entity(E.TRAY)] + list(level.orders.values())
+    orders = [Entity(E.TRAY)] + level.order_products
 
     # fmt: off
     assert order(Entity(E.PLATE, stack=[Entity(E.TUNA_ROLL)]*4)) == orders[1]

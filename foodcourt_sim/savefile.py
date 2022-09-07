@@ -5,24 +5,26 @@ from typing import Any, Union
 
 from .levels import BY_ID
 from .models import (
-    MODULE_LOOKUP,
-    Animatronic,
-    BigCounter,
     Direction,
-    Input,
     Level,
     LevelId,
     Module,
     ModuleId,
     MusicMode,
     PaintColor,
-    Painter,
     PaintMask,
     Position,
-    Sequencer,
-    SmallCounter,
     Solution,
     Wire,
+)
+from .modules import (
+    MODULE_LOOKUP,
+    Animatronic,
+    BigCounter,
+    Input,
+    Painter,
+    Sequencer,
+    SmallCounter,
 )
 
 
