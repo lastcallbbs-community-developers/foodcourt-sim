@@ -41,8 +41,8 @@ class Position(NamedTuple):
 class Direction(Enum):
     RIGHT = 0
     UP = 1
-    DOWN = 2
-    LEFT = 3
+    LEFT = 2
+    DOWN = 3
 
 
 @unique
