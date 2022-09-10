@@ -489,15 +489,18 @@ class Conveyor(Module):
             RelativeDirection.LEFT,
             RelativeDirection.FRONT,
         ]
-        moves.sort(
-            key=lambda m: priority.index(m.direction.back().relative_to(self.direction))
+        move = min(
+            moves,
+            key=lambda m: priority.index(
+                m.direction.back().relative_to(self.direction)
+            ),
         )
 
         # TODO: make sure update order is correct
         # if an upstream conveyor is processed before a downstream one, it may
         # see the downstream conveyor as occupied, but its entity will actually
         # move out of the way this tick
-        return moves[0]
+        return move
 
 
 class Output(Module):
@@ -583,7 +586,6 @@ class Sorter(Module):
         if stage == 1:
             if self._get_signal_count() > 1:
                 raise TooManyActiveInputs(self)
-            self._set_signal("SENSE", target is not None, state)
             if target is None:
                 return []
             direction = None
@@ -593,7 +595,6 @@ class Sorter(Module):
                 direction = self.direction.left()
             elif self._get_signal("RIGHT"):
                 direction = self.direction.right()
-            self._set_signal("SENSE", True, state)
             if direction is not None:
                 return [MoveEntity(target, direction)]
         elif stage == 2:
@@ -634,7 +635,8 @@ class Stacker(Module):
         # stacking logic
 
         stack_error = self.emergency_stop(
-            "These products cannot be stacked.", move.entity.position
+            f"These products cannot be stacked: {base}, {move.entity}",
+            move.entity.position,
         )
         base.add_to_stack(state, move.entity, stack_error)
         self._set_signal("STACK", True, state)

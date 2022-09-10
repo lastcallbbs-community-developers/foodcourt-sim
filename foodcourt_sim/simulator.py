@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from .enums import JackDirection
 from .errors import EmergencyStop
 from .models import Direction, MoveEntity, Position
-from .modules import MainInput, Multimixer, MultimixerEnable, Output
+from .modules import MainInput, Output
 
 if TYPE_CHECKING:
     from .entities import Entity
@@ -63,23 +63,27 @@ class State:
         return self._modules_by_pos.get(pos, None)
 
     def add_entity(self, entity: Entity) -> None:
+        """Add an entity to the position map."""
         if entity.position not in self.entities:
             self.entities[entity.position] = []
         self.entities[entity.position].append(entity)
 
     def remove_entity(self, entity: Entity) -> None:
+        """Remove an entity from the position map. Also clears the entity's position."""
         self.entities[entity.position].remove(entity)
         if not self.entities[entity.position]:
             del self.entities[entity.position]
         entity.position = Position(-1, -1)
 
     def move_entity(self, entity: Entity, direction: Direction) -> None:
+        """Move an entity from one position to the adjacent position in a direction."""
         new_pos = entity.position.shift_by(direction)
         self.remove_entity(entity)
         entity.position = new_pos
         self.add_entity(entity)
 
     def get_entity(self, pos: Position) -> Optional[Entity]:
+        """Retrieve the entity at a specific position. Returns None if no entity is present."""
         if pos not in self.entities:
             return None
         ents = self.entities[pos]
@@ -124,6 +128,7 @@ def update_modules(state: State, stage: int) -> list[MoveEntity]:
 def handle_moves_to_empty(
     dest: Position, state: State, moves: list[MoveEntity]
 ) -> Optional[MoveEntity]:
+    """Handle moving entities onto an empty factory floor space."""
     force = moves[0].force
     assert all(
         m.force is force for m in moves
@@ -144,8 +149,7 @@ def handle_moves_to_empty(
         return moves[0]
     # move priority: down, right, left, up
     priority = [Direction.DOWN, Direction.RIGHT, Direction.LEFT, Direction.UP]
-    moves.sort(key=lambda m: priority.index(m.direction))
-    return moves[0]
+    return min(moves, key=lambda m: priority.index(m.direction))
 
 
 def update_entities(
@@ -212,38 +216,48 @@ before first tick, do last step with main input signals turned on
 
 
 def simulate_order(
-    level: Level, solution: Solution, order_index: int, tick_limit: int = -1
+    level: Level,
+    solution: Solution,
+    order_index: int,
+    tick_limit: int = -1,
+    debug: bool = False,
 ) -> int:
     """Return the number of ticks the order took to complete."""
+    if debug:
+        print(solution)
     state = State.from_solution(level, solution, order_index)
 
     main_input = next(m for m in state.modules if isinstance(m, MainInput))
     output = next(m for m in state.modules if isinstance(m, Output))
 
     time = 0
-    finished = False
+    successful_output = False
     try:
         main_input.zeroth_tick(state)
         propagate_signals(state)
-        print(f"Tick {time}:")
-        state.dump(indent="  ")
+        if debug:
+            print(f"Tick {time}:")
+            state.dump(indent="  ")
         while True:
             time += 1
             actions = update_modules(state, stage=1)
-            finished |= update_entities(state, actions, output.floor_position)
+            successful_output |= update_entities(state, actions, output.floor_position)
             update_modules(state, stage=2)
             # keep simulating until all entities are removed
-            if finished and not state.entities:
+            if successful_output and not state.entities:
                 return time
             propagate_signals(state)
             # pause here in single-step mode
-            print(f"Tick {time}:")
-            state.dump(indent="  ")
+            if debug:
+                print(f"Tick {time}:")
+                state.dump(indent="  ")
             if tick_limit != -1 and time > tick_limit:
                 raise EmergencyStop("Tick limit reached.", Position(-1, -1))
     except EmergencyStop as e:
         # annotate exception with the current time
         e.time = time
+        print(f"\n! EMERGENCY STOP !\nTick {time}:")
+        state.dump(indent="  ")
         raise
 
     assert False

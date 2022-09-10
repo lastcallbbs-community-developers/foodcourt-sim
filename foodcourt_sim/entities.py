@@ -152,7 +152,11 @@ class ChaatDough(Entity):
         return (*super()._compare_key(), self.sauces)
 
     def add_sauce(self, sauce: ToppingId, error: Exception) -> None:
-        assert sauce in {ToppingId.TOMATO, ToppingId.MINT, ToppingId.YOGURT}
+        assert sauce in {
+            ToppingId.TOMATO,
+            ToppingId.MINT,
+            ToppingId.YOGURT,
+        }, f"invalid sauce {sauce} for ChaatDough"
         if sauce in self.sauces:
             raise error
         self.sauces.add(sauce)
@@ -180,7 +184,7 @@ class Cup(Entity):
         self.contents[fluid] += 1
 
     def remove_fluid(self, fluid: ToppingId) -> None:
-        assert fluid in +self.contents
+        assert fluid in +self.contents, f"tried to remove non-existent fluid {fluid}"
         self.contents[fluid] -= 1
         if self.contents[fluid] == 0:
             del self.contents[fluid]
