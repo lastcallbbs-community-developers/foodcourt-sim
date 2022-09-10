@@ -39,6 +39,9 @@ class LevelId(Enum):
     BELLYS = 12
     SUSHI_YEAH = 21
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
 
 @unique
 class ModuleId(Enum):
@@ -126,6 +129,9 @@ class ModuleId(Enum):
     BELLYS_SCANNER = 161
     SUSHI_YEAH_SCANNER = 170
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
 
 @unique
 class MusicMode(Enum):
@@ -133,6 +139,9 @@ class MusicMode(Enum):
 
     LEAD = 0
     BASS = 1
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 @unique
@@ -143,6 +152,9 @@ class PaintColor(Enum):
     WHITE = 1
     BLUE = 2
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
 
 @unique
 class PaintMask(Enum):
@@ -152,6 +164,9 @@ class PaintMask(Enum):
     UPPER_1 = 1
     LOWER_1 = 2
     LOWER_2 = 3
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 # simulation-only objects
@@ -168,6 +183,9 @@ class JackDirection(Enum):
         if self is JackDirection.OUT:
             return JackDirection.IN
         assert False
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 # from enum docs
@@ -191,6 +209,9 @@ class OrderedEnum(Enum):
         if self.__class__ is other.__class__:
             return self.value < other.value
         return NotImplemented
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 @unique

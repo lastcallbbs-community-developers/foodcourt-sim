@@ -490,7 +490,7 @@ class Conveyor(Module):
             RelativeDirection.FRONT,
         ]
         moves.sort(
-            key=lambda m: priority.index(m.direction.relative_to(self.direction))
+            key=lambda m: priority.index(m.direction.back().relative_to(self.direction))
         )
 
         # TODO: make sure update order is correct
@@ -518,7 +518,7 @@ class Output(Module):
         expected = state.level.order_products[state.order_index]
         if target != expected:
             print("expected:", expected)
-            print("got:", target)
+            print("got:     ", target)
             raise self.emergency_stop("This product does not match the order.")
         return [MoveEntity(target, self.direction)]
 
@@ -579,24 +579,25 @@ class Sorter(Module):
     jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
-        if self._get_signal_count() > 1:
-            raise TooManyActiveInputs(self)
         target = state.get_entity(self.floor_position)
-        self._set_signal("SENSE", target is not None, state)
-        if target is None:
-            return []
-        direction = None
-        if self._get_signal("THRU"):
-            direction = self.direction
-        elif self._get_signal("LEFT"):
-            direction = self.direction.left()
-        elif self._get_signal("RIGHT"):
-            direction = self.direction.right()
-        self._set_signal("SENSE", True, state)
-        if direction is not None:
-            return [MoveEntity(target, direction)]
+        if stage == 1:
+            if self._get_signal_count() > 1:
+                raise TooManyActiveInputs(self)
+            self._set_signal("SENSE", target is not None, state)
+            if target is None:
+                return []
+            direction = None
+            if self._get_signal("THRU"):
+                direction = self.direction
+            elif self._get_signal("LEFT"):
+                direction = self.direction.left()
+            elif self._get_signal("RIGHT"):
+                direction = self.direction.right()
+            self._set_signal("SENSE", True, state)
+            if direction is not None:
+                return [MoveEntity(target, direction)]
+        elif stage == 2:
+            self._set_signal("SENSE", target is not None, state)
         return []
 
 
@@ -650,7 +651,6 @@ class Cooker(Module):
         target = state.get_entity(self.floor_position)
         if stage == 1:
             first_tick = not self.signals.values[0]
-            self._set_signal("SENSE", target is not None, state)
             if target is None:
                 return []
             if self._get_signal("EJECT"):
@@ -665,9 +665,7 @@ class Cooker(Module):
                 )
                 target.operations.append(op)
         elif stage == 2:
-            # don't turn off SENSE on the tick something is being ejected
-            if target is not None:
-                self._set_signal("SENSE", True, state)
+            self._set_signal("SENSE", target is not None, state)
         return []
 
 
@@ -762,18 +760,24 @@ class TripleSlicer(SimpleMachine):
         if target not in (Entity(EntityId.CHICKEN), Entity(EntityId.CHICKEN_HALF)):
             raise self.emergency_stop("This product cannot be sliced.")
         state.remove_entity(target)
-        entity_l = Entity(EntityId.CHICKEN_LEG, position=self.floor_position)
-        entity_t = Entity(EntityId.CHICKEN_CUTLET, position=self.floor_position)
-        state.add_entity(entity_l)
+        leg = Entity(EntityId.CHICKEN_LEG, position=self.floor_position)
+        cutlet = Entity(EntityId.CHICKEN_CUTLET, position=self.floor_position)
+        if target.id is EntityId.CHICKEN:
+            entity_r = leg
+            entity_t = cutlet
+        else:
+            entity_r = cutlet
+            entity_t = leg
+        state.add_entity(entity_r)
         state.add_entity(entity_t)
         actions = [
-            MoveEntity(entity_l, direction=self.direction.left()),
+            MoveEntity(entity_r, direction=self.direction.right()),
             MoveEntity(entity_t, direction=self.direction),
         ]
         if target.id == EntityId.CHICKEN:
-            entity_r = Entity(EntityId.CHICKEN_HALF, position=self.floor_position)
-            state.add_entity(entity_r)
-            actions.append(MoveEntity(entity_r, direction=self.direction.right()))
+            entity_l = Entity(EntityId.CHICKEN_HALF, position=self.floor_position)
+            state.add_entity(entity_l)
+            actions.append(MoveEntity(entity_l, direction=self.direction.left()))
         return actions
 
 

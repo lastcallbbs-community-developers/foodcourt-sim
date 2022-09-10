@@ -271,15 +271,15 @@ def test_da_wings():
     orders = [Multitray(), *level.order_products]
 
     parts = [E.CHICKEN_CUTLET, E.CHICKEN_LEG]
-    for ids in itertools.combinations_with_replacement(parts, r=3):
+    for ids in itertools.product(parts, repeat=3):
         # fmt: off
         assert multitray(*[Entity(id, [*[CookFryer()]*2, CoatFluid(T.SAUCE)]) for id in ids]) == orders[1]
         # fmt: on
-    for ids in itertools.combinations_with_replacement(parts, r=6):
+    for ids in itertools.product(parts, repeat=6):
         # fmt: off
         assert multitray(*[Entity(id, [*[CookFryer()]*2, CoatFluid(T.SAUCE)]) for id in ids]) == orders[2]
         # fmt: on
-    for ids in itertools.combinations_with_replacement(parts, r=9):
+    for ids in itertools.product(parts, repeat=9):
         # fmt: off
         assert multitray(*[Entity(id, [*[CookFryer()]*2, CoatFluid(T.SAUCE)]) for id in ids]) == orders[3]
         # fmt: on
