@@ -329,6 +329,23 @@ def test_chaz_cheddar():
     assert tray(PizzaDough(operations=[Flatten()]*2, left_toppings=veg|meat, right_toppings=veg))      == orders[14]
     assert tray(PizzaDough(operations=[Flatten()]*2, left_toppings=veg|meat, right_toppings=meat))     == orders[15]
     assert tray(PizzaDough(operations=[Flatten()]*2, left_toppings=veg|meat, right_toppings=veg|meat)) == orders[16]
+
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=plain,    left_toppings=plain))    == orders[1]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=plain,    left_toppings=veg))      == orders[2]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=plain,    left_toppings=meat))     == orders[3]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=plain,    left_toppings=veg|meat)) == orders[4]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg,      left_toppings=plain))    == orders[5]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg,      left_toppings=veg))      == orders[6]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg,      left_toppings=meat))     == orders[7]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg,      left_toppings=veg|meat)) == orders[8]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=meat,     left_toppings=plain))    == orders[9]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=meat,     left_toppings=veg))      == orders[10]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=meat,     left_toppings=meat))     == orders[11]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=meat,     left_toppings=veg|meat)) == orders[12]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg|meat, left_toppings=plain))    == orders[13]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg|meat, left_toppings=veg))      == orders[14]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg|meat, left_toppings=meat))     == orders[15]
+    assert tray(PizzaDough(operations=[Flatten()]*2, right_toppings=veg|meat, left_toppings=veg|meat)) == orders[16]
     # fmt: on
 
 

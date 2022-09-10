@@ -296,7 +296,7 @@ LEVELS = [
         topping_inputs=[[T.CHOCO], [T.BERRY], [T.CANDY]],
         multi=True,
         orders={
-            (*ith_true(i, 3), *ith_true(j, 3)): multitray(
+            (*ith_true(j, 3), *ith_true(i, 3)): multitray(
                 *[Entity(E.DOUGH, [*[CookFryer()] * 2, *ops])] * count
             )
             for i, ops in enumerate(

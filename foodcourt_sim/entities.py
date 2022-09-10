@@ -109,9 +109,9 @@ class Entity:
 
     def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
         # default behavior:
-        if other.id not in _STACK_WHITELIST.get(self.id, set()):
-            raise error
         if self.stack is None:
+            if other.id not in _STACK_WHITELIST.get(self.id, set()):
+                raise error
             state.remove_entity(other)
             self.stack = other
         else:
@@ -241,10 +241,11 @@ class PizzaDough(Entity):
     right_toppings: set[ToppingId] = field(default_factory=set)
 
     def _compare_key(self) -> tuple[Any, ...]:
+        # the whole pizza can be rotated, and will still be accepted
+        # e.g. (MEAT R., VEGGIE L.) is the same as (MEAT L., VEGGIE R.)
         return (
             *super()._compare_key(),
-            self.left_toppings,
-            self.right_toppings,
+            *sorted([sorted(self.left_toppings), sorted(self.right_toppings)]),
         )
 
 

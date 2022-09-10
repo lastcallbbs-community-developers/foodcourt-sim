@@ -160,13 +160,18 @@ class Module:
             other, other_idx = state.wire_map[self, idx]
             # print(f"  propagating to {other.jacks[other_idx].name} on {other.id.name} @ {other.rack_position}")
             # pylint: disable-next=protected-access  # other is always a Module
-            other._set_input_signal(other_idx, value, state)
+            other._set_input_signal(other_idx, value, state, set())
 
-    def _set_input_signal(self, idx: int, value: bool, state: State) -> None:
-        """Overridden by Multimixer to propagate signals immediately."""
+    def _set_input_signal(
+        self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
+    ) -> None:
+        """Used by Multimixers to propagate signals immediately."""
         del state
         assert self.jacks[idx].direction is JackDirection.IN
+        if (self, idx) in seen:
+            return
         self.signals.next_values[idx] = value
+        seen.add((self, idx))
 
     def _set_signals(self, slc: slice, values: Sequence[bool], state: State) -> None:
         if len(self.signals.next_values[slc]) != len(values):
@@ -305,7 +310,7 @@ class EntityInput(Input):
         eid = self.entity_ids[idx]
         entity: Entity
         if state.level.id is LevelId.SODA_TRENCH and eid is EntityId.CUP:
-            entity = PaintableCup(position=self.floor_position)
+            entity = PaintableCup(position=self.floor_position, capacity=2)
         elif state.level.id is LevelId.MUMBAI_CHAAT and eid is EntityId.DOUGH:
             entity = ChaatDough(position=self.floor_position)
         elif state.level.id is LevelId.CHAZ_CHEDDAR and eid is EntityId.DOUGH:
@@ -313,7 +318,6 @@ class EntityInput(Input):
         elif eid is EntityId.CUP:
             capacity = {
                 LevelId.WINE_OCLOCK: 2,
-                LevelId.SODA_TRENCH: 2,
                 LevelId.THE_WALRUS: 5,
                 LevelId.CAFE_TRISTE: 4,
                 LevelId.HALF_CAFF_COFFEE: 4,
@@ -433,11 +437,13 @@ class ToppingDispenser(ToppingInput):
         if stage != 1:
             return []
         target = state.get_entity(self.floor_position)
-        if target is None:
-            raise self.emergency_stop("There is no product beneath this dispenser.")
-
-        target.operations.append(DispenseTopping(self.topping_ids[0]))
-        return [MoveEntity(target, self.direction)]
+        if self._get_signal(0):
+            if target is None:
+                raise self.emergency_stop("There is no product beneath this dispenser.")
+            target.operations.append(DispenseTopping(self.topping_ids[0]))
+        if target is not None:
+            return [MoveEntity(target, self.direction)]
+        return []
 
 
 class HalfToppingDispenser(ToppingInput):
@@ -455,16 +461,21 @@ class HalfToppingDispenser(ToppingInput):
         if stage != 1:
             return []
         entity = state.get_entity(self.floor_position)
-        if entity is None:
-            raise self.emergency_stop("There is no product beneath this dispenser.")
-        target = entity
-        # can operate on top of tray
-        if target.id is EntityId.TRAY and target.stack is not None:
-            target = target.stack
-        if not isinstance(target, PizzaDough):
-            raise self.emergency_stop("This topping cannot be applied to this product.")
-        target.left_toppings.add(self.topping_ids[0])
-        return [MoveEntity(entity, self.direction)]
+        if self._get_signal(0):
+            if entity is None:
+                raise self.emergency_stop("There is no product beneath this dispenser.")
+            target = entity
+            # can operate on top of tray
+            if target.id is EntityId.TRAY and target.stack is not None:
+                target = target.stack
+            if not isinstance(target, PizzaDough):
+                raise self.emergency_stop(
+                    "This topping cannot be applied to this product."
+                )
+            target.left_toppings.add(self.topping_ids[0])
+        if entity is not None:
+            return [MoveEntity(entity, self.direction)]
+        return []
 
 
 class Conveyor(Module):
@@ -601,6 +612,34 @@ class Sorter(Module):
             self._set_signal("SENSE", target is not None, state)
         return []
 
+    def handle_moves(
+        self, state: State, moves: list[MoveEntity]
+    ) -> Optional[MoveEntity]:
+        priority = [
+            RelativeDirection.BACK,
+            RelativeDirection.RIGHT,
+            RelativeDirection.LEFT,
+            RelativeDirection.FRONT,
+        ]
+        move = min(
+            moves,
+            key=lambda m: priority.index(
+                m.direction.back().relative_to(self.direction)
+            ),
+        )
+
+        available = state.get_entity(self.floor_position) is None
+        if self._get_signal_count() == 1:
+            # we're going to move the current entity away this tick
+            available = True
+        if not available:
+            if move.force:
+                raise self.emergency_stop(
+                    "These products have collided.", move.position
+                )
+            return None
+        return move
+
 
 @dataclass
 class Stacker(Module):
@@ -669,6 +708,32 @@ class Cooker(Module):
         elif stage == 2:
             self._set_signal("SENSE", target is not None, state)
         return []
+
+    def handle_moves(
+        self, state: State, moves: list[MoveEntity]
+    ) -> Optional[MoveEntity]:
+        priority = [
+            RelativeDirection.BACK,
+            RelativeDirection.FRONT,
+        ]
+        move = min(
+            moves,
+            key=lambda m: priority.index(
+                m.direction.back().relative_to(self.direction)
+            ),
+        )
+
+        available = state.get_entity(self.floor_position) is None
+        if self._get_signal("EJECT"):
+            # we're going to move the current entity away this tick
+            available = True
+        if not available:
+            if move.force:
+                raise self.emergency_stop(
+                    "These products have collided.", move.position
+                )
+            return None
+        return move
 
 
 class SimpleMachine(Module):
@@ -794,8 +859,8 @@ class HorizontalSlicer(SimpleMachine):
             return []
         if target == Entity(EntityId.BUN):
             state.remove_entity(target)
-            entity_r = Entity(EntityId.BUN_TOP, position=self.floor_position)
-            entity_l = Burger(position=self.floor_position)
+            entity_r = Burger(position=self.floor_position)
+            entity_l = Entity(EntityId.BUN_TOP, position=self.floor_position)
             state.add_entity(entity_r)
             state.add_entity(entity_l)
             return [
@@ -819,7 +884,7 @@ class Roller(SimpleMachine):
             if target.operations != [DispenseTopping(ToppingId.LEAVES)]:
                 raise error
             state.remove_entity(target)
-            entity = Entity(EntityId.CIGARETTE_2X, position=self.floor_position)
+            entity = Entity(EntityId.CIGARETTE_4X, position=self.floor_position)
             state.add_entity(entity)
             return [MoveEntity(entity, self.direction)]
         if isinstance(target, Nori):
@@ -981,17 +1046,20 @@ class Espresso(Module):
             error = self.emergency_stop("Steaming requires a proper target product.")
             if not isinstance(target, Cup):
                 raise error
-            # milk can be foamed as long as it's the only thing in the cup
-            if (+target.contents).keys() != {ToppingId.MILK}:
+            # milk can be foamed as long as there's only milk and foam in the cup
+            if not (+target.contents).keys() <= {ToppingId.MILK, ToppingId.FOAM}:
                 raise error
             target.remove_fluid(ToppingId.MILK)
             target.add_fluid(ToppingId.FOAM, error)
         return []
 
+    handle_moves = Cooker.handle_moves
+
 
 @dataclass
 class Animatronic(Module):
     _MODULE_IDS = [ModuleId.ANIMATRONIC]
+    _input_directions = set()  # type: ignore
     rack_width = 2
     price = 40
     jacks = [
@@ -1012,23 +1080,25 @@ class Multimixer(Module):
         *[OutJack(f"OUT_{i+1}") for i in range(4)],
     ]
 
-    def _set_input_signal(self, idx: int, value: bool, state: State) -> None:
-        # TODO: this should check whether the output value actually changed
-        # prev_value = any(self.signals.next_values[:4])
-        # if prev_value is value:
-        #     return
-        super()._set_input_signal(idx, value, state)
+    def _set_input_signal(
+        self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
+    ) -> None:
+        # TODO: maybe this should check whether the output value actually changed?
+        if (self, idx) in seen:
+            return
+        super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = any(self.signals.next_values[:4])
         for out_idx in range(4, 8):
             if (self, out_idx) in state.wire_map:
                 other, other_idx = state.wire_map[self, out_idx]
                 # pylint: disable-next=protected-access  # other is always a Module
-                other._set_input_signal(other_idx, value, state)
+                other._set_input_signal(other_idx, value, state, seen)
 
 
-class MultimixerEnable(Multimixer):
+class MultimixerEnable(Module):
     _MODULE_IDS = [ModuleId.MULTIMIXER_ENABLE]
+    on_floor = False
     price = 1
     jacks = [
         InJack("ENABLE"),
@@ -1036,16 +1106,19 @@ class MultimixerEnable(Multimixer):
         *[OutJack(f"OUT_{i+1}") for i in range(3)],
     ]
 
-    def _set_input_signal(self, idx: int, value: bool, state: State) -> None:
-        # TODO: this should check whether the output value actually changed
-        super()._set_input_signal(idx, value, state)
+    def _set_input_signal(
+        self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
+    ) -> None:
+        if (self, idx) in seen:
+            return
+        super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = self.signals.next_values[0] and any(self.signals.next_values[1:4])
         for out_idx in range(4, 7):
             if (self, out_idx) in state.wire_map:
                 other, other_idx = state.wire_map[self, out_idx]
                 # pylint: disable-next=protected-access  # other is always a Module
-                other._set_input_signal(other_idx, value, state)
+                other._set_input_signal(other_idx, value, state, seen)
 
 
 @dataclass

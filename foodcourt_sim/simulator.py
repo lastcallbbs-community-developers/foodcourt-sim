@@ -161,11 +161,12 @@ def update_entities(
     """
     ret = False
 
-    # TODO: determine movement evaluation order
+    # TODO: evaluate movements in the right order, to avoid spurious backups
     # should be: move entities off a space, then move entities on
     # forced movements should be evaluated first
-    forced_by_dest = defaultdict(list)
-    optional_by_dest = defaultdict(list)
+    by_dest: dict[Position, tuple[list[MoveEntity], list[MoveEntity]]] = defaultdict(
+        lambda: ([], [])
+    )
     for move in all_moves:
         pos = move.entity.position
         if pos == output_pos and move.direction is Direction.DOWN:
@@ -175,13 +176,13 @@ def update_entities(
         # group MoveEntity by destination
         if not (0 <= move.dest.row < 7 and 0 <= move.dest.column < 6):
             raise EmergencyStop("Products cannot leave the factory.", pos)
-        if move.force:
-            forced_by_dest[move.dest].append(move)
-        else:
-            optional_by_dest[move.dest].append(move)
-    for group in [forced_by_dest, optional_by_dest]:
-        for dest, moves in group.items():
-            assert moves, "move list must not be empty"
+        idx = 0 if move.force else 1
+        by_dest[move.dest][idx].append(move)
+    for dest, (forced, optional) in by_dest.items():
+        print(f"Moves to {dest}:\n  {forced=}\n  {optional=}")
+        for moves in (forced, optional):
+            if not moves:
+                continue
             module = state.get_module(dest)
             if module is None:
                 accepted = handle_moves_to_empty(dest, state, moves)
@@ -189,6 +190,15 @@ def update_entities(
                 accepted = module.handle_moves(state, moves)
             if accepted is not None:
                 state.move_entity(accepted.entity, accepted.direction)
+                break
+    # check for collisions
+    for dest in by_dest:
+        # either one of the moves should have succeeded, or whatever blocked
+        # the moves should still be there
+        assert dest in state.entities
+        if len(state.entities[dest]) > 1:
+            raise EmergencyStop("Unhandled entity collision", dest)
+
     return ret
 
 
