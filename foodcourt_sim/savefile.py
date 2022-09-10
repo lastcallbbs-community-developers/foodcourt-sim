@@ -3,25 +3,15 @@ import io
 import struct
 from typing import Any, Union
 
-from .levels import BY_ID
-from .models import (
-    Direction,
-    Level,
-    LevelId,
-    Module,
-    ModuleId,
-    MusicMode,
-    PaintColor,
-    PaintMask,
-    Position,
-    Solution,
-    Wire,
-)
+from .enums import LevelId, ModuleId, MusicMode, PaintColor, PaintMask
+from .levels import BY_ID, Level
+from .models import Direction, Position, Solution, Wire
 from .modules import (
     MODULE_LOOKUP,
     Animatronic,
     BigCounter,
     Input,
+    Module,
     Painter,
     Sequencer,
     SmallCounter,

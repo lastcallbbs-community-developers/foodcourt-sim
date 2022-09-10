@@ -1,39 +1,80 @@
 import itertools
 from collections import Counter
+from dataclasses import InitVar, dataclass, field
 
-from .models import (
+from .entities import (
     Burger,
     ChaatDough,
+    Cup,
+    Entity,
+    Multitray,
+    PaintableCup,
+    PizzaDough,
+    SushiBowl,
+    SushiPlate,
+    WingPlaceholder,
+)
+from .enums import EntityId, LevelId, PaintColor, ToppingId
+from .operations import (
     CoatFluid,
     CookFryer,
     CookGrill,
     CookMicrowave,
-    Cup,
     DispenseFluid,
     DispenseFluidMixed,
     DispenseTopping,
     Dock,
-    Entity,
-    EntityId,
     Flatten,
-    Level,
-    LevelId,
-    PaintableCup,
-    PaintColor,
-    PizzaDough,
-    ToppingId,
-    WingPlaceholder,
 )
 
-__all__ = ["LEVELS", "BY_ID", "BY_NUMBER"]
+__all__ = ["Level", "LEVELS", "BY_ID", "BY_NUMBER"]
+
+
+@dataclass
+class Level:
+    # included in save files, starts from 1, doesn't follow in-game order
+    id: LevelId
+    # human-readable name
+    name: str
+    # in-game level number, starts from 1
+    number: int
+    # names of order jacks (shared between main inputs and scanners)
+    order_signal_names: list[str]
+    # used for INPUT_* and FREEZER_*
+    entity_inputs: list[list[EntityId]]
+    # used for FLUID_DISPENSER_*, FLUID_COATER, TOPPING_DISPENSER, HALF_TOPPING_DISPENSER
+    topping_inputs: list[list[ToppingId]]
+    # whether multiple entities can be stacked on one tray
+    multi: bool
+    orders: InitVar[dict[tuple[bool, ...], Entity]]
+    # order signals for each order
+    order_signals: list[tuple[bool, ...]] = field(init=False)
+    # final products for each order
+    order_products: list[Entity] = field(init=False)
+
+    def __post_init__(self, orders):
+        self.order_signals = list(orders.keys())
+        self.order_products = [orders[sig] for sig in self.order_signals]
+
+    def __len__(self) -> int:
+        return len(self.order_signals)
+
+    @property
+    def internal_name(self) -> str:
+        # prefix for save file name
+        return self.name.lower().replace(" ", "-").replace("'", "")
 
 
 E = EntityId
 T = ToppingId
 
 
-def order(*components: Entity) -> Entity:
-    return Entity(E.TRAY, stack=list(components))
+def tray(component: Entity) -> Entity:
+    return Entity(E.TRAY, stack=component)
+
+
+def multitray(*components: Entity) -> Entity:
+    return Multitray(multistack=list(components))
 
 
 def ith_true(i: int, n: int) -> tuple[bool, ...]:
@@ -61,7 +102,7 @@ def meat_3_helper(mac: bool, slaw: bool, greens: bool, beans: bool) -> Entity:
         dishes.append(Entity(E.BOWL, [DispenseFluid(T.GREENS)]))
     if beans:
         dishes.append(Entity(E.BOWL, [DispenseFluid(T.BEANS)]))
-    return order(*dishes)
+    return multitray(*dishes)
 
 
 def breakside_helper(count: int, cheese: bool, pickle: bool, tomato: bool) -> Entity:
@@ -69,13 +110,13 @@ def breakside_helper(count: int, cheese: bool, pickle: bool, tomato: bool) -> En
     if cheese:
         patty.append(Entity(E.CHEESE))
 
-    stack = [*patty] * count
+    parts = [*patty] * count
     if pickle:
-        stack.append(Entity(E.PICKLE))
+        parts.append(Entity(E.PICKLE))
     if tomato:
-        stack.append(Entity(E.TOMATO))
-    stack.append(Entity(E.BUN_TOP))
-    return order(Burger(stack=stack))
+        parts.append(Entity(E.TOMATO))
+    parts.append(Entity(E.BUN_TOP))
+    return tray(Burger(multistack=parts))
 
 
 def chaz_cheddar_helper(
@@ -94,7 +135,7 @@ def chaz_cheddar_helper(
         dough.left_toppings.add(T.VEGGIE)
     if veggie_r:
         dough.right_toppings.add(T.VEGGIE)
-    return order(dough)
+    return tray(dough)
 
 
 def nook_helper(order_id: int) -> Entity:
@@ -107,22 +148,27 @@ def nook_helper(order_id: int) -> Entity:
         E.BLACK: 2,
         E.BREAD: 1,
     }
-    return order(*[Entity(id, [CookGrill()] * time) for id, time in cook_times.items()])
+    return Multitray(
+        operations=[DispenseFluid(T.BEANS)],
+        multistack=[
+            Entity(id, [CookGrill()] * time) for id, time in cook_times.items()
+        ],
+    )
 
 
 def bellys_helper(cheese: bool, side_id: EntityId, drink: ToppingId) -> Entity:
-    stack = [Entity(E.MEAT, [CookFryer()] * 4)]
+    parts = [Entity(E.MEAT, [CookFryer()] * 4)]
     if cheese:
-        stack.append(Entity(E.CHEESE))
-    stack.append(Entity(E.BUN_TOP))
-    burger = Burger(stack=stack)
-    cup = Cup(stack=[Entity(E.LID)], contents=Counter({drink: 2}))
-    side = Cup(stack=[Entity(side_id, [CookFryer()] * 4)])
-    return order(burger, cup, side)
+        parts.append(Entity(E.CHEESE))
+    parts.append(Entity(E.BUN_TOP))
+    burger = Burger(multistack=parts)
+    cup = Cup(stack=Entity(E.LID), contents=Counter({drink: 2}))
+    side = Cup(stack=Entity(side_id, [CookFryer()] * 4))
+    return multitray(burger, cup, side)
 
 
 def nigiri(fish: EntityId) -> Entity:
-    return Entity(E.RICE, stack=[Entity(fish)])
+    return Entity(E.RICE, stack=Entity(fish))
 
 
 LEVELS = [
@@ -133,9 +179,10 @@ LEVELS = [
         order_signal_names=["NACHO", "PRETZEL"],
         entity_inputs=[[E.NACHO], [E.PRETZEL]],
         topping_inputs=[[T.CHEESE]],
+        multi=False,
         orders={
-            (True, False): order(Entity(E.NACHO, [DispenseFluid(T.CHEESE)])),
-            (False, True): order(Entity(E.PRETZEL)),
+            (True, False): tray(Entity(E.NACHO, [DispenseFluid(T.CHEESE)])),
+            (False, True): tray(Entity(E.PRETZEL)),
         },
     ),
     Level(
@@ -145,8 +192,9 @@ LEVELS = [
         order_signal_names=["POCKET"],
         entity_inputs=[[E.POCKET]],
         topping_inputs=[],
+        multi=False,
         orders={
-            (True,): order(Entity(E.POCKET, [CookMicrowave()] * 4)),
+            (True,): tray(Entity(E.POCKET, [CookMicrowave()] * 4)),
         },
     ),
     Level(
@@ -154,11 +202,12 @@ LEVELS = [
         name="Wine O'Clock",
         number=3,
         order_signal_names=["RED", "WHITE"],
-        entity_inputs=[[E.CUP]],
+        entity_inputs=[[E.GLASS]],
         topping_inputs=[[T.RED, T.WHITE]],
+        multi=False,
         orders={
-            (True, False): order(Entity(E.GLASS, [DispenseFluid(T.RED)] * 2)),
-            (False, True): order(Entity(E.GLASS, [DispenseFluid(T.WHITE)] * 2)),
+            (True, False): tray(Entity(E.GLASS, [DispenseFluid(T.RED)] * 2)),
+            (False, True): tray(Entity(E.GLASS, [DispenseFluid(T.WHITE)] * 2)),
         },
     ),
     Level(
@@ -168,8 +217,9 @@ LEVELS = [
         order_signal_names=["POORI", "PAPDI"],
         entity_inputs=[[E.DOUGH]],
         topping_inputs=[[T.TOMATO, T.MINT, T.YOGURT]],
+        multi=False,
         orders={
-            ith_true(i, 2): order(chaat_helper(dock))
+            ith_true(i, 2): tray(chaat_helper(dock))
             for i, dock in enumerate([False, True])
         },
     ),
@@ -180,8 +230,9 @@ LEVELS = [
         order_signal_names=["CHOCO", "VANILLA", "TWIST", "SMALL", "MEDIUM", "LARGE"],
         entity_inputs=[[E.CONE]],
         topping_inputs=[[T.CHOCO, T.VANILLA]],
+        multi=False,
         orders={
-            (*ith_true(i, 3), *ith_true(j, 3)): order(Entity(E.CONE, [op] * count))
+            (*ith_true(i, 3), *ith_true(j, 3)): tray(Entity(E.CONE, [op] * count))
             for i, op in enumerate(
                 [
                     DispenseFluid(T.CHOCO),
@@ -206,8 +257,9 @@ LEVELS = [
         ],
         entity_inputs=[[E.PELMENI]],
         topping_inputs=[],
+        multi=True,
         orders={
-            ith_true(i, 6): order(*[Entity(E.PELMENI)] * count)
+            ith_true(i, 6): multitray(*[Entity(E.PELMENI)] * count)
             for i, count in enumerate([1, 3, 6, 10, 15, 21])
         },
     ),
@@ -218,10 +270,11 @@ LEVELS = [
         order_signal_names=["COKE", "DIET C.", "PEPSI", "DIET P."],
         entity_inputs=[[E.CUP, E.LID]],
         topping_inputs=[[T.COLA]],
+        multi=False,
         orders={
-            ith_true(i, 4): order(
+            ith_true(i, 4): tray(
                 PaintableCup(
-                    stack=[Entity(E.LID)],
+                    stack=Entity(E.LID),
                     contents=Counter({T.COLA: 2}),
                     colors=[color_1, PaintColor.WHITE, color_2],
                 )
@@ -241,8 +294,9 @@ LEVELS = [
         order_signal_names=["ONE", "SIX", "DOZEN", "PLAIN", "CHOCO", "BERRY"],
         entity_inputs=[[E.DOUGH]],
         topping_inputs=[[T.CHOCO], [T.BERRY], [T.CANDY]],
+        multi=True,
         orders={
-            (*ith_true(i, 3), *ith_true(j, 3)): order(
+            (*ith_true(i, 3), *ith_true(j, 3)): multitray(
                 *[Entity(E.DOUGH, [*[CookFryer()] * 2, *ops])] * count
             )
             for i, ops in enumerate(
@@ -262,8 +316,9 @@ LEVELS = [
         order_signal_names=["WHOLE", "HALF", "CUTLET", "LEG"],
         entity_inputs=[[E.CHICKEN]],
         topping_inputs=[[T.BREADING]],
+        multi=False,
         orders={
-            ith_true(i, 4): order(
+            ith_true(i, 4): tray(
                 Entity(id, [CoatFluid(T.BREADING), *[CookFryer()] * cook_time])
             )
             for i, (id, cook_time) in enumerate(
@@ -283,8 +338,9 @@ LEVELS = [
         order_signal_names=["ROAST", "RIBS", "200G", "400G", "600G"],
         entity_inputs=[[E.ROAST, E.RIBS]],
         topping_inputs=[],
+        multi=True,
         orders={
-            (*ith_true(i, 2), *ith_true(j, 3)): order(
+            (*ith_true(i, 2), *ith_true(j, 3)): multitray(
                 *[Entity(id)] * (count if id is E.RIBS_SLICE else 2 * count)
             )
             for i, id in enumerate([E.ROAST_SLICE, E.RIBS_SLICE])
@@ -298,19 +354,20 @@ LEVELS = [
         order_signal_names=["WHISKY", "W. SOUR", "HIGHBALL", "COLA"],
         entity_inputs=[[E.ICE], [E.CUP]],
         topping_inputs=[[T.VODKA, T.WHISKY], [T.COLA, T.LEMON]],
+        multi=False,
         orders={
-            ith_true(0, 4): order(Cup(contents=Counter({T.WHISKY: 1}))),
-            ith_true(1, 4): order(
-                Cup(contents=Counter({T.WHISKY: 2, T.LEMON: 1}), stack=[Entity(E.ICE)])
+            ith_true(0, 4): tray(Cup(contents=Counter({T.WHISKY: 1}))),
+            ith_true(1, 4): tray(
+                Cup(contents=Counter({T.WHISKY: 2, T.LEMON: 1}), stack=Entity(E.ICE))
             ),
-            ith_true(2, 4): order(
+            ith_true(2, 4): tray(
                 Cup(
                     contents=Counter({T.WHISKY: 2, T.LEMON: 1, T.COLA: 2}),
-                    stack=[Entity(E.ICE)],
+                    stack=Entity(E.ICE),
                 )
             ),
-            ith_true(3, 4): order(
-                Cup(contents=Counter({T.COLA: 5}), stack=[Entity(E.ICE)])
+            ith_true(3, 4): tray(
+                Cup(contents=Counter({T.COLA: 5}), stack=Entity(E.ICE))
             ),
         },
     ),
@@ -321,6 +378,7 @@ LEVELS = [
         order_signal_names=["MAC", "SLAW", "GREENS", "BEANS"],
         entity_inputs=[[E.MEAT], [E.BOWL]],
         topping_inputs=[[T.MAC], [T.SLAW], [T.GREENS], [T.BEANS]],
+        multi=True,
         orders={
             key: meat_3_helper(*key)
             for key in [
@@ -338,8 +396,9 @@ LEVELS = [
         order_signal_names=["DU JOUR"],
         entity_inputs=[[E.PAPER], [E.CUP]],
         topping_inputs=[[T.LEAVES]],
+        multi=True,
         orders={
-            (True,): order(
+            (True,): multitray(
                 Cup(contents=Counter({T.COFFEE: 1})), *[Entity(E.CIGARETTE)] * 8
             )
         },
@@ -354,28 +413,29 @@ LEVELS = [
             [E.PLAIN, E.CHOCO],
         ],
         topping_inputs=[],
+        multi=True,
         orders={
-            ith_true(0, 5): order(
+            ith_true(0, 5): multitray(
                 Entity(E.TENDER, [CookFryer()] * 4),
                 Entity(E.CRINKLE, [CookFryer()] * 4),
                 Entity(E.CHOCO),
             ),
-            ith_true(1, 5): order(
+            ith_true(1, 5): multitray(
                 Entity(E.BURGER, [CookMicrowave()] * 4),
                 Entity(E.TOT, [CookFryer()] * 4),
                 Entity(E.PLAIN),
             ),
-            ith_true(2, 5): order(
+            ith_true(2, 5): multitray(
                 Entity(E.CORNDOG, [CookFryer()] * 4),
                 Entity(E.TOT, [CookFryer()] * 4),
                 Entity(E.CHOCO),
             ),
-            ith_true(3, 5): order(
+            ith_true(3, 5): multitray(
                 Entity(E.TENDER, [CookFryer()] * 4),
                 Entity(E.CURLY, [CookFryer()] * 4),
                 Entity(E.PLAIN),
             ),
-            ith_true(4, 5): order(
+            ith_true(4, 5): multitray(
                 Entity(E.PIZZA, [CookMicrowave()] * 4),
                 Entity(E.CRINKLE, [CookFryer()] * 4),
                 Entity(E.CHOCO),
@@ -389,8 +449,9 @@ LEVELS = [
         order_signal_names=["3 PCS.", "6 PCS.", "9 PCS."],
         entity_inputs=[[E.CHICKEN]],
         topping_inputs=[[T.SAUCE]],
+        multi=True,
         orders={
-            ith_true(i, 3): order(
+            ith_true(i, 3): multitray(
                 *[
                     WingPlaceholder(
                         operations=[*[CookFryer()] * 2, CoatFluid(T.SAUCE)],
@@ -408,6 +469,7 @@ LEVELS = [
         order_signal_names=["SINGLE", "DOUBLE", "TRIPLE", "CHEESE", "PICKLE", "TOMATO"],
         entity_inputs=[[E.MEAT], [E.BUN], [E.CHEESE, E.PICKLE, E.TOMATO]],
         topping_inputs=[],
+        multi=False,
         orders={
             (*ith_true(count - 1, 3), *options): breakside_helper(count, *options)
             for count in range(1, 4)
@@ -421,6 +483,7 @@ LEVELS = [
         order_signal_names=["MEAT L.", "MEAT R.", "VEGGIE L.", "VEGGIE R."],
         entity_inputs=[[E.DOUGH]],
         topping_inputs=[[T.SAUCE], [T.CHEESE], [T.MEAT], [T.VEGGIE]],
+        multi=False,
         orders={
             key: chaz_cheddar_helper(*key)
             for meat_l, veggie_l, meat_r, veggie_r in itertools.product(
@@ -436,16 +499,17 @@ LEVELS = [
         order_signal_names=["ESPRE.", "DOPPIO", "LATTE", "CAPP.", "AMER."],
         entity_inputs=[[E.CUP]],
         topping_inputs=[[T.MILK], [T.WATER]],
+        multi=False,
         orders={
-            ith_true(0, 5): order(Cup(contents=Counter({T.COFFEE: 1}))),
-            ith_true(1, 5): order(Cup(contents=Counter({T.COFFEE: 2}))),
-            ith_true(2, 5): order(
+            ith_true(0, 5): tray(Cup(contents=Counter({T.COFFEE: 1}))),
+            ith_true(1, 5): tray(Cup(contents=Counter({T.COFFEE: 2}))),
+            ith_true(2, 5): tray(
                 Cup(contents=Counter({T.COFFEE: 1, T.MILK: 2, T.FOAM: 1}))
             ),
-            ith_true(3, 5): order(
+            ith_true(3, 5): tray(
                 Cup(contents=Counter({T.COFFEE: 1, T.MILK: 1, T.FOAM: 2}))
             ),
-            ith_true(4, 5): order(Cup(contents=Counter({T.COFFEE: 1, T.WATER: 3}))),
+            ith_true(4, 5): tray(Cup(contents=Counter({T.COFFEE: 1, T.WATER: 3}))),
         },
     ),
     Level(
@@ -460,6 +524,7 @@ LEVELS = [
             [E.BREAD],
         ],
         topping_inputs=[[T.BEANS]],
+        multi=True,
         orders={ith_true(i, 2): nook_helper(i) for i in range(2)},
     ),
     Level(
@@ -473,6 +538,7 @@ LEVELS = [
             [E.CUP, E.LID],
         ],
         topping_inputs=[[T.ORANGE, T.PURPLE]],
+        multi=True,
         orders={
             (*ith_true(i, 2), *ith_true(k, 2), *ith_true(j, 2)): bellys_helper(
                 cheese=cheese, side_id=side_id, drink=drink
@@ -496,15 +562,20 @@ LEVELS = [
         ],
         entity_inputs=[[E.NORI, E.RICE], [E.TUNA, E.SALMON], [E.PLATE, E.BOWL]],
         topping_inputs=[[T.SOUP]],
+        multi=False,
         orders={
-            ith_true(0, 6): order(Entity(E.PLATE, stack=[Entity(E.TUNA_ROLL)] * 4)),
-            ith_true(1, 6): order(Entity(E.PLATE, stack=[Entity(E.SALMON_ROLL)] * 4)),
-            ith_true(2, 6): order(Entity(E.PLATE, stack=[nigiri(E.TUNA)] * 2)),
-            ith_true(3, 6): order(Entity(E.PLATE, stack=[nigiri(E.SALMON)] * 2)),
-            ith_true(4, 6): order(
-                Entity(E.BOWL, stack=[nigiri(E.TUNA), nigiri(E.SALMON)])
+            ith_true(0, 6): tray(SushiPlate(multistack=[Entity(E.TUNA_MAKI)] * 4)),
+            ith_true(1, 6): tray(SushiPlate(multistack=[Entity(E.SALMON_MAKI)] * 4)),
+            ith_true(2, 6): tray(
+                SushiPlate(left_stack=nigiri(E.TUNA), right_stack=nigiri(E.TUNA))
             ),
-            ith_true(5, 6): order(Entity(E.BOWL, [DispenseFluid(T.SOUP)])),
+            ith_true(3, 6): tray(
+                SushiPlate(left_stack=nigiri(E.SALMON), right_stack=nigiri(E.SALMON))
+            ),
+            ith_true(4, 6): tray(
+                SushiBowl(left_stack=nigiri(E.TUNA), right_stack=nigiri(E.SALMON))
+            ),
+            ith_true(5, 6): tray(SushiBowl(operations=[DispenseFluid(T.SOUP)])),
         },
     ),
 ]

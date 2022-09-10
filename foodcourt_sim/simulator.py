@@ -1,89 +1,257 @@
-from typing import Optional
+from __future__ import annotations
 
-from .models import Action, Entity, EntityId, FinishLevel, Level, Solution, State
-from .modules import MainInput, Output, TargetsFront, TargetsSelf
+from collections import defaultdict
+from copy import deepcopy
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
+
+from .enums import JackDirection
+from .errors import EmergencyStop
+from .models import Direction, MoveEntity, Position
+from .modules import MainInput, Multimixer, MultimixerEnable, Output
+
+if TYPE_CHECKING:
+    from .entities import Entity
+    from .levels import Level
+    from .models import Solution, Wire
+    from .modules import Module
+
+
+__all__ = [
+    "MoveEntity",
+    "State",
+    "simulate_order",
+    "simulate_solution",
+]
+
+
+@dataclass
+class State:
+    level: Level
+    modules: list[Module]
+    # bi-directional map of wire connections
+    wire_map: dict[tuple[Module, int], tuple[Module, int]]
+    order_index: int
+    entities: dict[Position, list[Entity]] = field(
+        init=False, repr=False, default_factory=dict
+    )
+    _modules_by_pos: dict[Position, Module] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._modules_by_pos = {
+            module.floor_position: module for module in self.modules if module.on_floor
+        }
+
+    @classmethod
+    def from_solution(cls, level: Level, solution: Solution, order_index: int) -> State:
+        assert solution.level_id == level.id
+        modules = deepcopy(solution.modules)
+        # build wire map
+        wire_map = {}
+        for wire in solution.wires:
+            module_1 = modules[wire.module_1]
+            module_2 = modules[wire.module_2]
+            wire_map[module_1, wire.jack_1] = (module_2, wire.jack_2)
+            wire_map[module_2, wire.jack_2] = (module_1, wire.jack_1)
+        return cls(level, modules, wire_map, order_index)
+
+    @property
+    def order_signals(self) -> tuple[bool, ...]:
+        return self.level.order_signals[self.order_index]
+
+    def get_module(self, pos: Position) -> Optional[Module]:
+        return self._modules_by_pos.get(pos, None)
+
+    def add_entity(self, entity: Entity) -> None:
+        if entity.position not in self.entities:
+            self.entities[entity.position] = []
+        self.entities[entity.position].append(entity)
+
+    def remove_entity(self, entity: Entity) -> None:
+        self.entities[entity.position].remove(entity)
+        if not self.entities[entity.position]:
+            del self.entities[entity.position]
+        entity.position = Position(-1, -1)
+
+    def move_entity(self, entity: Entity, direction: Direction) -> None:
+        new_pos = entity.position.shift_by(direction)
+        self.remove_entity(entity)
+        entity.position = new_pos
+        self.add_entity(entity)
+
+    def get_entity(self, pos: Position) -> Optional[Entity]:
+        if pos not in self.entities:
+            return None
+        ents = self.entities[pos]
+        assert len(ents) == 1, f"multiple entities at {pos}"
+        return ents[0]
+
+    def dump(self, indent: str = "") -> None:
+        """Pretty-print the simulation state for debugging."""
+        for module in sorted(
+            self.modules, key=lambda m: (-m.rack_position.row, m.rack_position.column)
+        ):
+            if not module.on_rack:
+                continue
+            print(
+                f"{indent}{module.id.name} @ {module.rack_position}: {module.debug_str()}"
+            )
+            for i, (jack, value) in enumerate(zip(module.jacks, module.signals.values)):
+                if not value:
+                    continue
+                if (module, i) not in self.wire_map:
+                    continue
+                if jack.direction is JackDirection.OUT:
+                    print(f"{indent}  {jack.name} >")
+                else:
+                    print(f"{indent}  > {jack.name}")
+        for pos, entities in self.entities.items():
+            print(f"{indent}{pos}:")
+            for entity in entities:
+                print(f"{indent}  {entity}")
+
+
+def update_modules(state: State, stage: int) -> list[MoveEntity]:
+    moves = []
+    # tick modules
+    for module in state.modules:
+        moves.extend(module.update(stage, state))
+    if stage != 1:
+        assert not moves, "only update stage 1 can make movements"
+    return moves
+
+
+def handle_moves_to_empty(
+    dest: Position, state: State, moves: list[MoveEntity]
+) -> Optional[MoveEntity]:
+    force = moves[0].force
+    assert all(
+        m.force is force for m in moves
+    ), "not all moves have the same force state"
+    if state.get_entity(dest) is not None:
+        if force:
+            # collision with something already on the floor
+            raise EmergencyStop(
+                "These products have collided.", dest, moves[0].position
+            )
+        return None
+    if force:
+        if len(moves) > 1:
+            # collision between entities moving onto the same empty space
+            raise EmergencyStop(
+                "These products have collided.", dest, *[m.position for m in moves]
+            )
+        return moves[0]
+    # move priority: down, right, left, up
+    priority = [Direction.DOWN, Direction.RIGHT, Direction.LEFT, Direction.UP]
+    moves.sort(key=lambda m: priority.index(m.direction))
+    return moves[0]
+
+
+def update_entities(
+    state: State, all_moves: list[MoveEntity], output_pos: Position
+) -> bool:
+    """Move entities around and handle collisions.
+
+    Return True if the correct product exits through the output conveyor.
+    """
+    ret = False
+
+    # TODO: determine movement evaluation order
+    # should be: move entities off a space, then move entities on
+    # forced movements should be evaluated first
+    forced_by_dest = defaultdict(list)
+    optional_by_dest = defaultdict(list)
+    for move in all_moves:
+        pos = move.entity.position
+        if pos == output_pos and move.direction is Direction.DOWN:
+            ret = True
+            state.remove_entity(move.entity)
+            continue
+        # group MoveEntity by destination
+        if not (0 <= move.dest.row < 7 and 0 <= move.dest.column < 6):
+            raise EmergencyStop("Products cannot leave the factory.", pos)
+        if move.force:
+            forced_by_dest[move.dest].append(move)
+        else:
+            optional_by_dest[move.dest].append(move)
+    for group in [forced_by_dest, optional_by_dest]:
+        for dest, moves in group.items():
+            assert moves, "move list must not be empty"
+            module = state.get_module(dest)
+            if module is None:
+                accepted = handle_moves_to_empty(dest, state, moves)
+            else:
+                accepted = module.handle_moves(state, moves)
+            if accepted is not None:
+                state.move_entity(accepted.entity, accepted.direction)
+    return ret
+
+
+def propagate_signals(state: State) -> None:
+    for module in state.modules:
+        if not module.on_rack:
+            continue
+        # commit pending signal values
+        module.signals.update()
+
 
 """ Notes:
 * multimixers wired to themselves don't stay on after the other inputs go off
 
 processing order:
 1. increment time
-2. update module state/signals - "too many active inputs" triggers before movement
+2. update module state/signals - "too many active inputs" triggers before movement (stage 1)
 3. move entities - entity collision error triggers before level pass
-4. end level if product has exited at bottom of output
-5. propagate signals, light up jacks and wires
+4. update module sense signals (scanner, sensor, cooker, etc.) (stage 2)
+5. end level if product has exited at bottom of output
+6. propagate signals, light up jacks and wires
 
-before first tick, do step 5 with main input signals turned on
+before first tick, do last step with main input signals turned on
 """
 
 
-def update_modules(state: State) -> list[Action]:
-    entities_by_pos: dict[tuple[int, int], Entity] = {}
-    for entity in state.entities:
-        key = entity.position.astuple()
-        assert key not in entities_by_pos, f"unhandled collision at {entity.position}"
-        entities_by_pos[entity.position.astuple()] = entity
-
-    actions = []
-    # tick modules
-    for module in state.modules:
-        args = {}
-        if isinstance(module, (TargetsSelf, TargetsFront)):
-            key = module.target_pos().astuple()
-            args["target"] = entities_by_pos.get(key, None)
-        actions.extend(module.update(**args))
-    return actions
-
-
-def update_entities(state: State, actions: list[Action]) -> Optional[bool]:
-    """Move entities around and handle collisions.
-
-    If the correct product exits through the output conveyor and there are no
-    remaining entities, return True.
-    If there are remaining entities, return False.
-    Otherwise, return None.
-    """
-    finished = False
-    for action in actions:
-        if isinstance(action, FinishLevel):
-            finished = True
-    if finished:
-        return not state.entities
-    return None
-
-
-def propagate_signals(state: State) -> None:
-    pass
-
-
-def simulate_order(level: Level, solution: Solution, order_index: int) -> bool:
-    target_product = level.order_products[order_index]
+def simulate_order(
+    level: Level, solution: Solution, order_index: int, tick_limit: int = -1
+) -> int:
+    """Return the number of ticks the order took to complete."""
     state = State.from_solution(level, solution, order_index)
 
     main_input = next(m for m in state.modules if isinstance(m, MainInput))
     output = next(m for m in state.modules if isinstance(m, Output))
-    tray = Entity(EntityId.TRAY, position=main_input.floor_position.copy())
-    state.add_entity(tray)
 
     time = 0
-    # TODO: main input signals
-    propagate_signals(state)
-    while True:
-        time += 1
-        # pause here in single-step mode
-        actions = update_modules(state)
-        result = update_entities(state, actions)
-        if result is not None:
-            return result
+    finished = False
+    try:
+        main_input.zeroth_tick(state)
         propagate_signals(state)
+        print(f"Tick {time}:")
+        state.dump(indent="  ")
+        while True:
+            time += 1
+            actions = update_modules(state, stage=1)
+            finished |= update_entities(state, actions, output.floor_position)
+            update_modules(state, stage=2)
+            # keep simulating until all entities are removed
+            if finished and not state.entities:
+                return time
+            propagate_signals(state)
+            # pause here in single-step mode
+            print(f"Tick {time}:")
+            state.dump(indent="  ")
+            if tick_limit != -1 and time > tick_limit:
+                raise EmergencyStop("Tick limit reached.", Position(-1, -1))
+    except EmergencyStop as e:
+        # annotate exception with the current time
+        e.time = time
+        raise
 
     assert False
 
 
-def simulate_solution(level: Level, solution: Solution) -> bool:
-    bad_orders = []
+def simulate_solution(level: Level, solution: Solution) -> int:
+    """Return the max number of ticks any order took to complete."""
+    max_time = 0
     for order_index in range(len(level)):
-        result = simulate_order(level, solution, order_index)
-        if not result:
-            bad_orders.append(order_index)
-    return not bad_orders
+        max_time = max(simulate_order(level, solution, order_index), max_time)
+    return max_time

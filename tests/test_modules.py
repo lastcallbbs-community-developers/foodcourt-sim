@@ -1,5 +1,8 @@
 # pylint: disable-next=unused-wildcard-import, wildcard-import
-from foodcourt_sim.models import *
+from collections import Counter
+
+from foodcourt_sim.enums import EntityId, ToppingId
+from foodcourt_sim.modules import Cup
 
 E = EntityId
 T = ToppingId
