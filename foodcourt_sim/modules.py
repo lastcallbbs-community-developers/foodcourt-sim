@@ -216,9 +216,14 @@ class Module:
     def debug_str(self) -> str:
         return ""
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        """Update internal state and output signals for a single tick."""
-        del stage, state
+    def tick(self, state: State) -> list[MoveEntity]:
+        """Update internal state and act on entities based on the current tick.
+
+        Called before handle_moves().
+
+        Return a list of movements to apply to entities at this module's position.
+        """
+        del state
         return []
 
     def handle_moves(
@@ -230,11 +235,13 @@ class Module:
     ) -> Optional[MoveEntity]:
         """Resolve movements onto this module.
 
-        Return the movement to perform, or None if no movement should be performed.
+        Called after tick().
 
         If `ignore_collisions` is True, then consider the current position to be
         empty for the purposes of collision checking.
         If `dry_run` is True, don't modify any simulation state.
+
+        Return the movement to perform, or None if no movement should be performed.
 
         Note: the default implementation does not handle collisions with
         existing entities on this module.
@@ -253,6 +260,12 @@ class Module:
             )
         return moves[0]
 
+    def update_signals(self, state: State) -> None:
+        """Update the output signals based on the current tick.
+
+        Called after handle_moves().
+        """
+
 
 # Module subclasses
 
@@ -269,9 +282,7 @@ class Scanner(Module):
             self.jacks.append(OutJack(name))
         super().__post_init__(level)
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 2:
-            return []
+    def update_signals(self, state: State) -> None:
         target = state.get_entity(self.floor_position.shift_by(self.direction))
         enable = target is not None and target.id in (EntityId.TRAY, EntityId.MULTITRAY)
         if enable:
@@ -279,7 +290,6 @@ class Scanner(Module):
         else:
             values = [False] * len(self.jacks)
         self._set_signals(values, state)
-        return []
 
 
 class MainInput(Module):
@@ -313,15 +323,17 @@ class MainInput(Module):
             )
         state.add_entity(tray)
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         tray = state.get_entity(self.floor_position)
         if tray is not None:
             # only on first tick
-            self._set_signals([False] * len(self.jacks), state)
             return [MoveEntity(tray, self.direction)]
         return []
+
+    def update_signals(self, state: State) -> None:
+        if self.signals.values[0]:
+            # only on first tick
+            self._set_signals([False] * len(self.jacks), state)
 
 
 @dataclass
@@ -346,9 +358,7 @@ class EntityInput(Input):
         self.jacks = [InJack(eid.name) for eid in self.entity_ids]
         super().__post_init__(level)
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         input_count = sum(self._get_signals())
         if input_count > 1:
             raise TooManyActiveInputs(self)
@@ -412,9 +422,7 @@ class FluidDispenser(ToppingInput):
         ModuleId.FLUID_DISPENSER_3X,
     ]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         input_count = self._get_signal_count()
         if input_count > 1 and state.level.id is not LevelId.MR_CHILLY:
             raise TooManyActiveInputs(self)
@@ -471,9 +479,7 @@ class FluidCoater(ToppingInput):
             len(self.topping_ids) == 1
         ), "invalid level: too many toppings for FluidCoater"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -485,9 +491,7 @@ class ToppingDispenser(ToppingInput):
     _MODULE_IDS = [ModuleId.TOPPING_DISPENSER]
     _input_directions = {RelativeDirection.BACK}
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if self._get_signal(0):
             if target is None:
@@ -512,9 +516,7 @@ class HalfToppingDispenser(ToppingInput):
                 "Pizza topping dispenser can only face up or down"
             )
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         entity = state.get_entity(self.floor_position)
         if self._get_signal(0):
             if entity is None:
@@ -538,15 +540,10 @@ class Conveyor(Module):
     price = 5
     on_rack = False
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        # dest = state.get_entity(self.floor_position.shift_by(self.direction))
-        # if dest is not None:
-        #     return []
         return [MoveEntity(target, self.direction, force=False)]
 
     def handle_moves(
@@ -584,9 +581,7 @@ class Output(Module):
         if self.direction is not Direction.DOWN:
             raise InvalidSolutionError("Output must face down")
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -615,9 +610,7 @@ class Router(Module):
     def debug_str(self) -> str:
         return self.current_direction.name
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
         old_direction = self.current_direction
@@ -639,13 +632,9 @@ class Sensor(Module):
     price = 5
     jacks = [OutJack("SENSE")]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 2:
-            return []
+    def update_signals(self, state: State) -> None:
         target = state.get_entity(self.floor_position.shift_by(self.direction))
-        if target is not None:
-            self._set_signal("SENSE", True, state)
-        return []
+        self._set_signal("SENSE", target is not None, state)
 
 
 class EjectingModule(Module):
@@ -700,25 +689,26 @@ class Sorter(EjectingModule):
     price = 10
     jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
-        if stage == 1:
-            if self._get_signal_count() > 1:
-                raise TooManyActiveInputs(self)
-            if target is None:
-                return []
-            direction = None
-            if self._get_signal("THRU"):
-                direction = self.direction
-            elif self._get_signal("LEFT"):
-                direction = self.direction.left()
-            elif self._get_signal("RIGHT"):
-                direction = self.direction.right()
-            if direction is not None:
-                return [MoveEntity(target, direction)]
-        elif stage == 2 and target is not None:
-            self._set_signal("SENSE", True, state)
+        if self._get_signal_count() > 1:
+            raise TooManyActiveInputs(self)
+        if target is None:
+            return []
+        direction = None
+        if self._get_signal("THRU"):
+            direction = self.direction
+        elif self._get_signal("LEFT"):
+            direction = self.direction.left()
+        elif self._get_signal("RIGHT"):
+            direction = self.direction.right()
+        if direction is not None:
+            return [MoveEntity(target, direction)]
         return []
+
+    def update_signals(self, state: State) -> None:
+        target = state.get_entity(self.floor_position)
+        self._set_signal("SENSE", target is not None, state)
 
 
 class Stacker(Module):
@@ -728,9 +718,7 @@ class Stacker(Module):
 
     __hash__ = Module.__hash__
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None or not self._get_signal("EJECT"):
             return []
@@ -767,26 +755,27 @@ class Cooker(EjectingModule):
     price = 20
     jacks = [OutJack("SENSE"), InJack("EJECT")]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
-        if stage == 1:
-            first_tick = not self.signals.values[0]
-            if target is None:
-                return []
-            if self._get_signal("EJECT"):
-                return [MoveEntity(target, self.direction)]
-            if not first_tick:
-                op = Operation(
-                    {
-                        ModuleId.GRILL: OperationId.COOK_GRILL,
-                        ModuleId.FRYER: OperationId.COOK_FRYER,
-                        ModuleId.MICROWAVE: OperationId.COOK_MICROWAVE,
-                    }[self.id]
-                )
-                target.operations.append(op)
-        elif stage == 2 and target is not None:
-            self._set_signal("SENSE", True, state)
+        first_tick = not self.signals.values[0]
+        if target is None:
+            return []
+        if self._get_signal("EJECT"):
+            return [MoveEntity(target, self.direction)]
+        if not first_tick:
+            op = Operation(
+                {
+                    ModuleId.GRILL: OperationId.COOK_GRILL,
+                    ModuleId.FRYER: OperationId.COOK_FRYER,
+                    ModuleId.MICROWAVE: OperationId.COOK_MICROWAVE,
+                }[self.id]
+            )
+            target.operations.append(op)
         return []
+
+    def update_signals(self, state: State) -> None:
+        target = state.get_entity(self.floor_position)
+        self._set_signal("SENSE", target is not None, state)
 
 
 class SimpleMachine(Module):
@@ -805,9 +794,7 @@ class WasteBin(SimpleMachine):
     def debug_str(self) -> str:
         return "full" if self.is_full else "empty"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -837,9 +824,7 @@ class DoubleSlicer(SimpleMachine):
         },
     }
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -883,9 +868,7 @@ class DoubleSlicer(SimpleMachine):
 class TripleSlicer(SimpleMachine):
     _MODULE_IDS = [ModuleId.TRIPLE_SLICER]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -917,9 +900,7 @@ class TripleSlicer(SimpleMachine):
 class HorizontalSlicer(SimpleMachine):
     _MODULE_IDS = [ModuleId.HORIZONTAL_SLICER]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -939,9 +920,7 @@ class HorizontalSlicer(SimpleMachine):
 class Roller(SimpleMachine):
     _MODULE_IDS = [ModuleId.ROLLER]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -978,9 +957,7 @@ class Roller(SimpleMachine):
 class Docker(SimpleMachine):
     _MODULE_IDS = [ModuleId.DOCKER]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -993,9 +970,7 @@ class Docker(SimpleMachine):
 class Flattener(SimpleMachine):
     _MODULE_IDS = [ModuleId.FLATTENER]
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         entity = state.get_entity(self.floor_position)
         if entity is None:
             return []
@@ -1013,9 +988,7 @@ class Rotator(SimpleMachine):
     _MODULE_IDS = [ModuleId.ROTATOR]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         entity = state.get_entity(self.floor_position)
         if entity is None:
             return []
@@ -1044,9 +1017,7 @@ class Painter(Module):
 
     __hash__ = Module.__hash__
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
@@ -1086,9 +1057,7 @@ class Espresso(EjectingModule):
     def debug_str(self) -> str:
         return f"grind_count={self.grind_count}"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
         if self._get_signal("GRIND"):
@@ -1197,14 +1166,11 @@ class SmallCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage == 1:
-            for signal, increment in zip(self._get_signals(), self.values):
-                if signal:
-                    self.count = max(-99, min(self.count + increment, 99))
-        elif stage == 2 and self.count == 0:
-            self._set_signal("ZERO", True, state)
-        return []
+    def update_signals(self, state: State) -> None:
+        for signal, increment in zip(self._get_signals(), self.values):
+            if signal:
+                self.count = max(-99, min(self.count + increment, 99))
+        self._set_signal("ZERO", self.count == 0, state)
 
 
 @dataclass
@@ -1237,17 +1203,12 @@ class BigCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage == 1:
-            for signal, increment in zip(self._get_signals(), self.values):
-                if signal:
-                    self.count = max(-99, min(self.count + increment, 99))
-        elif stage == 2:
-            if self.count == 0:
-                self._set_signal("ZERO", True, state)
-            elif self.count > 0:
-                self._set_signal("POS", True, state)
-        return []
+    def update_signals(self, state: State) -> None:
+        for signal, increment in zip(self._get_signals(), self.values):
+            if signal:
+                self.count = max(-99, min(self.count + increment, 99))
+        self._set_signal("ZERO", self.count == 0, state)
+        self._set_signal("POS", self.count > 0, state)
 
 
 @dataclass
@@ -1278,9 +1239,7 @@ class Sequencer(Module):
     def debug_str(self) -> str:
         return f"row={self.current_row}"
 
-    def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
+    def tick(self, state: State) -> list[MoveEntity]:
         if self._get_signal("STOP"):
             self.current_row = -1
         if self.current_row == -1 and self._get_signal("START"):

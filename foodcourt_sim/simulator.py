@@ -122,16 +122,6 @@ class State:
                 print(f"{indent}  {entity}")
 
 
-def update_modules(state: State, stage: int) -> list[MoveEntity]:
-    moves = []
-    # tick modules
-    for module in state.modules:
-        moves.extend(module.update(stage, state))
-    if stage != 1:
-        assert not moves, "only update stage 1 can make movements"
-    return moves
-
-
 def handle_moves_to_empty(
     dest: Position, state: State, moves: list[MoveEntity]
 ) -> Optional[MoveEntity]:
@@ -376,11 +366,14 @@ def simulate_order(
                 state.dump(indent="  ")
             while True:
                 time += 1
-                moves = update_modules(state, stage=1)
+                moves = []
+                for module in state.modules:
+                    moves.extend(module.tick(state))
                 successful_output |= move_entities(
                     state, moves, output.floor_position, debug=debug
                 )
-                update_modules(state, stage=2)
+                for module in state.modules:
+                    module.update_signals(state)
                 # keep simulating until all entities are removed
                 if successful_output and not state.entities:
                     return time
