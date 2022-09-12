@@ -18,9 +18,10 @@ def pytest_generate_tests(metafunc):
     entries: list[tuple[tuple[Any, ...], tuple[Solution, int], str]] = []
     for filepath in sorted(solutions_dir.glob("*/*.solution")):
         with open(filepath, "rb") as f:
-            solution, level = read_solution(f)
+            solution = read_solution(f)
         if (metafunc.function is test_solved) != solution.solved:
             continue
+        level = solution.level
         for i in range(len(level.order_signals)):
             entries.append(
                 (
@@ -37,9 +38,7 @@ def pytest_generate_tests(metafunc):
 def test_solved(solution: Solution, order_index: int) -> None:
     level = BY_ID[solution.level_id]
     assert solution.solved
-    ticks = simulate_order(
-        level, solution, order_index, time_limit=solution.time, debug=DEBUG
-    )
+    ticks = simulate_order(solution, order_index, time_limit=solution.time, debug=DEBUG)
     assert ticks <= solution.time
 
 
@@ -47,7 +46,7 @@ def test_unsolved(solution: Solution, order_index: int) -> None:
     level = BY_ID[solution.level_id]
     assert not solution.solved
     try:
-        simulate_order(level, solution, order_index, time_limit=100, debug=DEBUG)
+        simulate_order(solution, order_index, time_limit=100, debug=DEBUG)
     except (TimeLimitExceeded, EmergencyStop):
         pass
 
@@ -57,33 +56,33 @@ def test_unsolved(solution: Solution, order_index: int) -> None:
 )
 def test_movement(solution_name: str) -> None:
     with open(solutions_dir / "yut23" / solution_name, "rb") as f:
-        solution, level = read_solution(f)
+        solution = read_solution(f)
 
     with pytest.raises(TimeLimitExceeded):
-        simulate_order(level, solution, 0, time_limit=20, debug=DEBUG)
+        simulate_order(solution, 0, time_limit=20, debug=DEBUG)
 
 
 def test_loops() -> None:
     with open(solutions_dir / "yut23" / "loop-testing-1.solution", "rb") as f:
-        solution, level = read_solution(f)
+        solution = read_solution(f)
 
-    ticks = simulate_order(level, solution, 0, time_limit=22, debug=DEBUG)
+    ticks = simulate_order(solution, 0, time_limit=22, debug=DEBUG)
     assert ticks == 22
 
     with open(solutions_dir / "yut23" / "loop-testing-2.solution", "rb") as f:
-        solution, level = read_solution(f)
+        solution = read_solution(f)
 
     with pytest.raises(EmergencyStop) as excinfo:
-        ticks = simulate_order(level, solution, 0, time_limit=12, debug=DEBUG)
+        ticks = simulate_order(solution, 0, time_limit=12, debug=DEBUG)
     assert excinfo.value.message == "This product cannot be sliced."
     assert Position(3, 3) in excinfo.value.positions
 
 
 def test_2twelve():
     with open(solutions_dir / "yut23" / "2twelve-1.solution", "rb") as f:
-        solution, level = read_solution(f)
+        solution = read_solution(f)
 
-    ticks = simulate_order(level, solution, 1, time_limit=8, debug=DEBUG)
+    ticks = simulate_order(solution, 1, time_limit=8, debug=DEBUG)
     assert ticks == 8
-    ticks = simulate_order(level, solution, 0, time_limit=8, debug=DEBUG)
+    ticks = simulate_order(solution, 0, time_limit=8, debug=DEBUG)
     assert ticks == 8

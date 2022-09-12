@@ -120,35 +120,11 @@ class Solution:  # pylint: disable=too-many-instance-attributes
 
         return "\n".join(lines)
 
-    # def dump_wires_to(self, arg: Any) -> None:
-    #     """used for reverse engineering"""
-    #     if isinstance(arg, Module):
-    #         index = self.modules.index(arg)
-    #     elif isinstance(arg, int):
-    #         index = arg
-    #     elif isinstance(arg, ModuleId):
-    #         index = next(i for i, m in enumerate(self.modules) if m.id is arg)
-    #     module = self.modules[index]
-    #     print(f"Wires to/from {module.id} (index {index}):")
-    #     connections = []
-    #     for i, wire in enumerate(self.wires):
-    #         if index not in (wire.module_1, wire.module_2):
-    #             continue
-    #         if wire.module_2 == index:
-    #             wire = Wire(wire.module_2, wire.jack_2, wire.module_1, wire.jack_1)
-    #         connections.append((i, wire))
-    #     connections.sort(key=lambda x: x[1].jack_1)
-    #     for i, wire in connections:
-    #         module_2 = self.modules[wire.module_2]
-    #         jack_1 = str(wire.jack_1)
-    #         jack_2 = str(wire.jack_2)
-    #         if wire.jack_2 < len(module_2.jacks):
-    #             j2 = module_2.jacks[wire.jack_2]
-    #             jack_2 = repr(j2.name.upper())
-    #             jack_1 += f" ({j2.direction.opposite().name})".ljust(6)
-    #         print(
-    #             f"jack {jack_1} to jack {jack_2} of {module_2.id} (index {wire.module_2})"
-    #         )
+    @functools.cached_property
+    def level(self) -> Level:
+        from .levels import BY_ID  # pylint: disable=import-outside-toplevel
+
+        return BY_ID[self.level_id]
 
     def check(self) -> None:
         main_input_index = -1
@@ -242,8 +218,13 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                     f"{module_1}, jack {wire.jack_1} is connected to {module_2}, jack {wire.jack_2} with the same direction"
                 )
 
-        if self.solved and self.cost != cost:
-            raise InvalidSolutionError("calculated cost doesn't match recorded cost")
+        if self.solved:
+            if self.cost != cost:
+                raise InvalidSolutionError(
+                    "calculated cost doesn't match recorded cost"
+                )
+        else:
+            self.cost = cost
 
 
 @functools.total_ordering  # optimization note: this adds some overhead (see the docs)
@@ -280,3 +261,10 @@ class MoveEntity:
     @functools.cached_property
     def dest(self) -> Position:
         return self.entity.position.shift_by(self.direction)
+
+
+@dataclass
+class Metrics:
+    max_time: int
+    cost: int
+    total_time: int

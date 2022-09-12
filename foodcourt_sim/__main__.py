@@ -1,33 +1,66 @@
 #!/usr/bin/env python3
 
-import io
+import argparse
+import dataclasses
+import json
 import sys
 
-from .savefile import read_solution, write_solution
+from .savefile import read_solution
+from .simulator import simulate_solution
 
 
-def test_roundtrip(data: bytes) -> None:
-    raw_1 = data
-    stream = io.BytesIO(raw_1)
-    solution_1, _ = read_solution(stream)
-    stream.seek(0)
-    stream.truncate(0)
-    write_solution(stream, solution_1)
-    raw_2 = stream.getvalue()
-    assert raw_1 == raw_2, "round-trip from bytes to Solution to bytes failed"
-    stream.seek(0)
-    solution_2, _ = read_solution(stream)
-    assert (
-        solution_1 == solution_2
-    ), "round-trip from Solution to bytes to Solution failed"
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="python -m foodcourt_sim",
+        description="Simulate 20th Century Food Court solutions",
+    )
+    subparsers = parser.add_subparsers(required=True)
+
+    parser_validate = subparsers.add_parser(
+        "validate", help="Validate a solution file (must already be solved)"
+    )
+    parser_validate.add_argument(
+        "solution_file",
+        type=argparse.FileType("rb"),
+        help="Solution file path (or - for stdin)",
+    )
+    parser_validate.add_argument(
+        "--json", action="store_true", help="Use JSON output mode"
+    )
+
+    def run_validate(args: argparse.Namespace) -> int:
+        """Returns an exit code."""
+        solution = read_solution(args.solution_file)
+        level = solution.level
+        solution.check()
+        if not solution.solved:
+            sys.stderr.write(
+                "ERROR: the given solution has not been marked as solved in-game\n"
+            )
+            return 1
+        metrics = simulate_solution(solution, time_limit=solution.time)
+        json_result = [
+            dict(
+                level_number=level.number,
+                level_name=level.name,
+                level_slug=level.internal_name,
+                solution_name=solution.name,
+                **dataclasses.asdict(metrics),
+            )
+        ]
+        if args.json:
+            print(json.dumps(json_result))
+        else:
+            print(f'{level.name} ("{solution.name}")')
+            for field in dataclasses.fields(metrics):
+                print(field.name, "=", getattr(metrics, field.name))
+        return 0
+
+    parser_validate.set_defaults(func=run_validate)
+
+    args = parser.parse_args()
+    sys.exit(args.func(args))
 
 
 if __name__ == "__main__":
-    with open(sys.argv[1], "rb") as f:
-        raw = f.read()
-    sol = read_solution(raw)[0]
-    sol.check()
-
-    test_roundtrip(raw)
-
-    print(sol)
+    main()

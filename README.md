@@ -2,14 +2,12 @@
 
 A library for parsing/validating solutions to 20th Century Food Court, a subgame of [Last Call BBS](https://zachtronics.com/last-call-bbs/).
 
-Very much a work in progress. Save file parsing works, but simulation is not supported yet.
-
 ## Usage
 
+To validate an already-solved solution, use
 ```
-python -m foodcourt_sim <solution_file_path>
+python -m foodcourt_sim validate [--json] <solution_file_path>
 ```
-will parse and dump a solution.
 
 Solution files are usually located under:
 ```

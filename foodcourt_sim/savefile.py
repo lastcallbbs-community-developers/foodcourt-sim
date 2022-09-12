@@ -134,7 +134,7 @@ def write_wire(stream: io.BufferedIOBase, wire: Wire) -> None:
     write_int(stream, wire.jack_2, 4)
 
 
-def read_solution(data: Union[bytes, io.BufferedIOBase]) -> tuple[Solution, Level]:
+def read_solution(data: Union[bytes, io.BufferedIOBase]) -> Solution:
     if isinstance(data, io.BufferedIOBase):
         stream = data
     else:
@@ -160,7 +160,7 @@ def read_solution(data: Union[bytes, io.BufferedIOBase]) -> tuple[Solution, Leve
     wires = [read_wire(stream) for _ in range(num_wires)]
 
     solution = Solution(version, level_id, name, solved, time, cost, modules, wires)
-    return solution, level
+    return solution
 
 
 def write_solution(stream: io.BufferedIOBase, solution: Solution) -> None:

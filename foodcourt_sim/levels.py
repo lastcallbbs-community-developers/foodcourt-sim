@@ -56,9 +56,6 @@ class Level:
         self.order_signals = list(orders.keys())
         self.order_products = [orders[sig] for sig in self.order_signals]
 
-    def __len__(self) -> int:
-        return len(self.order_signals)
-
     @property
     def internal_name(self) -> str:
         # prefix for save file name

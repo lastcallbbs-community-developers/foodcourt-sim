@@ -11,10 +11,11 @@ from .enums import JackDirection
 from .errors import (
     EmergencyStop,
     InternalSimulationError,
+    InvalidSolutionError,
     SimulationError,
     TimeLimitExceeded,
 )
-from .models import Direction, MoveEntity, Position
+from .models import Direction, Metrics, MoveEntity, Position
 from .modules import MainInput, Output
 
 if TYPE_CHECKING:
@@ -49,8 +50,7 @@ class State:
         }
 
     @classmethod
-    def from_solution(cls, level: Level, solution: Solution, order_index: int) -> State:
-        assert solution.level_id == level.id
+    def from_solution(cls, solution: Solution, order_index: int) -> State:
         modules = deepcopy(solution.modules)
         # build wire map
         wire_map = {}
@@ -59,7 +59,7 @@ class State:
             module_2 = modules[wire.module_2]
             wire_map[module_1, wire.jack_1] = (module_2, wire.jack_2)
             wire_map[module_2, wire.jack_2] = (module_1, wire.jack_1)
-        return cls(level, modules, wire_map, order_index)
+        return cls(solution.level, modules, wire_map, order_index)
 
     @property
     def order_signals(self) -> tuple[bool, ...]:
@@ -349,7 +349,6 @@ before first tick, do last step with main input signals turned on
 
 
 def simulate_order(
-    level: Level,
     solution: Solution,
     order_index: int,
     time_limit: int = -1,
@@ -358,7 +357,7 @@ def simulate_order(
     """Return the number of ticks the order took to complete."""
     if debug:
         print(solution)
-    state = State.from_solution(level, solution, order_index)
+    state = State.from_solution(solution, order_index)
 
     main_input = next(m for m in state.modules if isinstance(m, MainInput))
     output = next(m for m in state.modules if isinstance(m, Output))
@@ -409,9 +408,18 @@ def simulate_order(
     assert False
 
 
-def simulate_solution(level: Level, solution: Solution) -> int:
-    """Return the max number of ticks any order took to complete."""
+def simulate_solution(
+    solution: Solution, time_limit: int = -1, debug: bool = False
+) -> Metrics:
+    total_time = 0
     max_time = 0
-    for order_index in range(len(level)):
-        max_time = max(simulate_order(level, solution, order_index), max_time)
-    return max_time
+    for order_index in range(len(solution.level.order_signals)):
+        time = simulate_order(solution, order_index, time_limit=time_limit, debug=debug)
+        total_time += time
+        max_time = max(
+            time,
+            max_time,
+        )
+    if solution.solved and solution.time != max_time:
+        raise InvalidSolutionError("evaluated time doesn't match stored time")
+    return Metrics(max_time=max_time, cost=solution.cost, total_time=total_time)

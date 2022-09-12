@@ -20,20 +20,20 @@ def raw_solution(request):
 
 
 def test_check(raw_solution):  # pylint: disable=redefined-outer-name
-    solution = read_solution(raw_solution)[0]
+    solution = read_solution(raw_solution)
     solution.check()
 
 
 def test_roundtrip(raw_solution):  # pylint: disable=redefined-outer-name
     stream = io.BytesIO(raw_solution)
-    solution_1 = read_solution(stream)[0]
+    solution_1 = read_solution(stream)
     stream.seek(0)
     stream.truncate(0)
     write_solution(stream, solution_1)
     raw_2 = stream.getvalue()
     assert raw_solution == raw_2, "round-trip from bytes to Solution to bytes failed"
     stream.seek(0)
-    solution_2 = read_solution(stream)[0]
+    solution_2 = read_solution(stream)
     assert (
         solution_1 == solution_2
     ), "round-trip from Solution to bytes to Solution failed"
