@@ -16,3 +16,9 @@ Solution files are usually located under:
 Windows: %USERPROFILE%\Documents\My Games\Last Call BBS\<user-id>\20th Century Food Court\
 Linux: $HOME/.local/share/Last Call BBS/<user-id>/20th Century Food Court/
 ```
+
+To run tests locally on your entire solutions folder (on Linux):
+```
+mkdir -p tests/solutions/$USER && cp -r "$HOME/.local/share/Last Call BBS"/*/"20th Century Food Court"/*.solution tests/solutions/$USER/
+python -m pytest --show-capture no --tb no -k $USER
+```
