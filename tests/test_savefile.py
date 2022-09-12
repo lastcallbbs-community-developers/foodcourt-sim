@@ -6,30 +6,7 @@ from foodcourt_sim.savefile import read_solution, write_solution
 
 solutions_dir = Path(__file__).parent / "solutions"
 
-SOLUTION_FILES = [
-    "2twelve-1.solution",
-    "2twelve-5.solution",
-    "original-hot-pocket-experience-1.solution",
-    "mumbai-chaat-1.solution",
-    "mr.-chilly-1.solution",
-    "kazan-2.solution",
-    "soda-trench-1.solution",
-    "rosies-doughnuts-1.solution",
-    "on-the-fried-side-1.solution",
-    "sweet-heat-bbq-1.solution",
-    "the-walrus-1.solution",
-    "meat+3-2.solution",
-    "cafe-triste-1.solution",
-    "the-commissary-1.solution",
-    "da-wings-1.solution",
-    "breakside-grill-3.solution",
-    "chaz-cheddar-1.solution",
-    "half-caff-coffee-4.solution",
-    "mildreds-nook-1.solution",
-    "bellys-2.solution",
-    "bellys-3.solution",
-    "sushi-yeah!-1.solution",
-]
+SOLUTION_FILES = [path.name for path in solutions_dir.glob("*.solution")]
 
 
 @pytest.fixture(scope="module", params=SOLUTION_FILES)
