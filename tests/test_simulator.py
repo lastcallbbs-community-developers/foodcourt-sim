@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from foodcourt_sim import BY_ID, read_solution, simulate_order
+from foodcourt_sim import read_solution, simulate_order
 from foodcourt_sim.errors import EmergencyStop, TimeLimitExceeded
 from foodcourt_sim.models import Position, Solution
 
@@ -36,14 +36,12 @@ def pytest_generate_tests(metafunc):
 
 
 def test_solved(solution: Solution, order_index: int) -> None:
-    level = BY_ID[solution.level_id]
     assert solution.solved
     ticks = simulate_order(solution, order_index, time_limit=solution.time, debug=DEBUG)
     assert ticks <= solution.time
 
 
 def test_unsolved(solution: Solution, order_index: int) -> None:
-    level = BY_ID[solution.level_id]
     assert not solution.solved
     try:
         simulate_order(solution, order_index, time_limit=100, debug=DEBUG)

@@ -4,7 +4,12 @@ A library for parsing/validating solutions to 20th Century Food Court, a subgame
 
 ## Usage
 
-To validate an already-solved solution, use
+To validate all solved solutions in a directory, use
+```
+python -m foodcourt_sim validate_all [--json] <solution_directory>
+```
+
+To validate a single, already-solved solution, use
 ```
 python -m foodcourt_sim validate [--json] <solution_file_path>
 ```

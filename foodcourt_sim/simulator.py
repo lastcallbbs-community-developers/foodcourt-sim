@@ -414,6 +414,8 @@ def simulate_order(
 def simulate_solution(
     solution: Solution, time_limit: int = -1, debug: bool = False
 ) -> Metrics:
+    if time_limit == -1 and solution.solved:
+        time_limit = solution.time
     total_time = 0
     max_time = 0
     for order_index in range(len(solution.level.order_signals)):
