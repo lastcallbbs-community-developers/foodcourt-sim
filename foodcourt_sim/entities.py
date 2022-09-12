@@ -124,15 +124,28 @@ class MultiStackEntity(Entity):
     stack: Optional[Entity] = field(init=False, default=None)
     # the entities that are stacked on this entity
     multistack: list[Entity] = field(default_factory=list)
+    capacity: int = 0
 
     def _compare_key(self) -> tuple[Any, ...]:
         return (*super()._compare_key(), sorted(self.multistack))
 
+    def get_capacity(self) -> int:
+        return self.capacity
+
     def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
-        if other.id not in _STACK_WHITELIST[self.id]:
-            raise error
-        state.remove_entity(other)
-        self.multistack.append(other)
+        if self.get_capacity() and len(self.multistack) == self.get_capacity():
+            for stack in self.multistack:
+                try:
+                    stack.add_to_stack(state, other, error)
+                except type(error):
+                    continue
+                else:
+                    break
+        else:
+            if other.id not in _STACK_WHITELIST[self.id]:
+                raise error
+            state.remove_entity(other)
+            self.multistack.append(other)
 
 
 @dataclass(eq=False, repr=False)
@@ -250,51 +263,28 @@ class PizzaDough(Entity):
 
 
 @dataclass(eq=False, repr=False)
-class DoubleStackEntity(Entity):
-    """Entity that has two independent stacks."""
-
-    stack: Optional[Entity] = field(init=False, default=None)
-    left_stack: Optional[Entity] = None
-    right_stack: Optional[Entity] = None
-
-    def _compare_key(self) -> tuple[Any, ...]:
-        stacks = sorted(
-            [self.left_stack, self.right_stack], key=lambda x: (x is not None, x)
-        )
-        return (
-            *super()._compare_key()[:-1],
-            *stacks,
-        )
-
-    def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
-        if other.id not in _STACK_WHITELIST[self.id]:
-            raise error
-
-
-@dataclass(eq=False, repr=False)
-class Nori(DoubleStackEntity):
+class Nori(MultiStackEntity):
     """Nori sheet for Sushi Yeah!"""
 
     id: EntityId = EntityId.NORI
+    capacity: int = 2
 
 
 @dataclass(eq=False, repr=False)
-class SushiPlate(DoubleStackEntity, MultiStackEntity):
+class SushiPlate(MultiStackEntity):
     """Plate for Sushi Yeah!"""
 
     id: EntityId = EntityId.PLATE
 
-    def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
-        if other.id not in _STACK_WHITELIST[self.id]:
-            raise error
-        if other.id is EntityId.RICE:
-            DoubleStackEntity.add_to_stack(self, state, other, error)
-        else:
-            MultiStackEntity.add_to_stack(self, state, other, error)
+    def get_capacity(self) -> int:
+        if any(entity.id is EntityId.RICE for entity in self.multistack):
+            return 2
+        return 4
 
 
 @dataclass(eq=False, repr=False)
-class SushiBowl(DoubleStackEntity):
+class SushiBowl(MultiStackEntity):
     """Bowl for Sushi Yeah!"""
 
     id: EntityId = EntityId.BOWL
+    capacity: int = 2

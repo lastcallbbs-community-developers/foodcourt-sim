@@ -289,10 +289,12 @@ class MainInput(Module):
         self._set_signal("START", True, state)
         self._set_signals([True, *state.order_signals], state)
         tray: Entity
-        if state.level.multi:
-            tray = Multitray(position=self.floor_position)
-        else:
+        if state.level.tray_capacity == 1:
             tray = Entity(EntityId.TRAY, position=self.floor_position)
+        else:
+            tray = Multitray(
+                position=self.floor_position, capacity=state.level.tray_capacity
+            )
         state.add_entity(tray)
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
@@ -877,12 +879,12 @@ class TripleSlicer(SimpleMachine):
         state.remove_entity(target)
         leg = Entity(EntityId.CHICKEN_LEG, position=self.floor_position)
         cutlet = Entity(EntityId.CHICKEN_CUTLET, position=self.floor_position)
-        if target.id is EntityId.CHICKEN:
-            entity_r = leg
-            entity_t = cutlet
-        else:
+        if state.level.id is LevelId.DA_WINGS and target.id is EntityId.CHICKEN_HALF:
             entity_r = cutlet
             entity_t = leg
+        else:
+            entity_r = leg
+            entity_t = cutlet
         state.add_entity(entity_r)
         state.add_entity(entity_t)
         actions = [
@@ -937,20 +939,21 @@ class Roller(SimpleMachine):
             return [MoveEntity(entity, self.direction)]
         if isinstance(target, Nori):
             if not (
-                target.left_stack == target.right_stack
-                and target.left_stack
+                len(target.multistack) == 2
+                and target.multistack[0] == target.multistack[1]
+                and target.multistack[0]
                 in [
                     Entity(EntityId.RICE, stack=Entity(fish))
                     for fish in [EntityId.TUNA, EntityId.SALMON]
                 ]
             ):
                 raise error
-            if target.left_stack.stack.id is EntityId.TUNA:  # type: ignore
+            if target.multistack[0].stack.id is EntityId.TUNA:  # type: ignore
                 roll_type = EntityId.TUNA_MAKI_4X
             else:
                 roll_type = EntityId.SALMON_MAKI_4X
             state.remove_entity(target)
-            entity = Entity(roll_type)
+            entity = Entity(roll_type, position=self.floor_position)
             state.add_entity(entity)
             return [MoveEntity(entity, self.direction)]
         raise error

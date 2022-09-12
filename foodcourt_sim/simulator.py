@@ -200,6 +200,11 @@ def resolve_movement(
             print(f"  {forced=}")
         if optional:
             print(f"  {optional=}")
+    # check for forced collisions
+    if len(forced) > 1:
+        raise EmergencyStop(
+            "These products have collided.", dest, *(m.source for m in forced)
+        )
     for move_group in (forced, optional):
         if not move_group:
             continue
@@ -214,7 +219,6 @@ def resolve_movement(
             state.move_entity(accepted.entity, accepted.direction)
             # don't need to try next move group
             break
-    assert len(forced) <= 1
 
 
 def resolve_loop(
@@ -241,6 +245,11 @@ def resolve_loop(
                 print(f"  {forced=}")
             if optional:
                 print(f"  {optional=}")
+        # check for forced collisions
+        if len(forced) > 1:
+            raise EmergencyStop(
+                "These products have collided.", dest, *(m.source for m in forced)
+            )
         for move_group in (forced, optional):
             if not move_group:
                 continue
@@ -258,7 +267,6 @@ def resolve_loop(
             if accepted is not None:
                 # don't need to try next move group
                 break
-        assert len(forced) <= 1
     if do_loop:
         assert sorted(accepted_moves) == sorted(
             loop_moves
@@ -394,7 +402,7 @@ def simulate_order(
                 desc = "*** INTERNAL SIMULATION ERROR ***"
             else:
                 desc = "*** SIMULATION ERROR ***"
-            print(f"\n{desc}\nTick {time}:")
+            print(f"\n{desc}\n{e}")
             state.dump(indent="  ")
         raise
 

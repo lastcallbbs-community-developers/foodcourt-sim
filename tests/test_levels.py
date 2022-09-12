@@ -449,11 +449,11 @@ def test_sushi_yeah():
     # fmt: off
     assert tray(SushiPlate(multistack=[Entity(E.TUNA_MAKI)]*4)) == orders[1]
     assert tray(SushiPlate(multistack=[Entity(E.SALMON_MAKI)]*4)) == orders[2]
-    assert tray(SushiPlate(left_stack=Entity(E.RICE, stack=Entity(E.TUNA)), right_stack=Entity(E.RICE, stack=Entity(E.TUNA)))) == orders[3]
-    assert tray(SushiPlate(left_stack=Entity(E.RICE, stack=Entity(E.SALMON)), right_stack=Entity(E.RICE, stack=Entity(E.SALMON)))) == orders[4]
-    assert tray(SushiBowl(left_stack=Entity(E.RICE, stack=Entity(E.TUNA)), right_stack=Entity(E.RICE, stack=Entity(E.SALMON)))) == orders[5]
-    assert tray(SushiBowl(left_stack=Entity(E.RICE, stack=Entity(E.SALMON)), right_stack=Entity(E.RICE, stack=Entity(E.TUNA)))) == orders[5]
-    assert tray(SushiBowl(left_stack=Entity(E.RICE, stack=Entity(E.TUNA)), right_stack=Entity(E.RICE, stack=Entity(E.TUNA)))) != orders[5]
-    assert tray(SushiBowl(left_stack=Entity(E.RICE, stack=Entity(E.SALMON)), right_stack=Entity(E.RICE, stack=Entity(E.SALMON)))) != orders[5]
+    assert tray(SushiPlate(multistack=[Entity(E.RICE, stack=Entity(E.TUNA))]*2)) == orders[3]
+    assert tray(SushiPlate(multistack=[Entity(E.RICE, stack=Entity(E.SALMON))]*2)) == orders[4]
+    assert tray(SushiBowl(multistack=[Entity(E.RICE, stack=Entity(E.TUNA)), Entity(E.RICE, stack=Entity(E.SALMON))])) == orders[5]
+    assert tray(SushiBowl(multistack=[Entity(E.RICE, stack=Entity(E.SALMON)), Entity(E.RICE, stack=Entity(E.TUNA))])) == orders[5]
+    assert tray(SushiBowl(multistack=[Entity(E.RICE, stack=Entity(E.TUNA))]*2)) != orders[5]
+    assert tray(SushiBowl(multistack=[Entity(E.RICE, stack=Entity(E.SALMON))]*2)) != orders[5]
     assert tray(SushiBowl(operations=[DispenseFluid(T.SOUP)])) == orders[6]
     # fmt: on
