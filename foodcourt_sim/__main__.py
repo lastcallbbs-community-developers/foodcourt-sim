@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from .errors import EmergencyStop, InvalidSolutionError, TimeLimitExceeded
-from .models import Metrics, Solution
+from .models import Solution
 from .savefile import read_solution
-from .simulator import simulate_solution
+from .simulator import Metrics, simulate_solution
 
 
 def to_json(solution: Solution, metrics: Metrics) -> dict[str, Any]:

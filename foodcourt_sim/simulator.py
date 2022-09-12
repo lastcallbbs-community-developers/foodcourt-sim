@@ -14,7 +14,7 @@ from .errors import (
     SimulationError,
     TimeLimitExceeded,
 )
-from .models import Direction, Metrics, MoveEntity, Position
+from .models import Direction, MoveEntity, Position
 from .modules import MainInput, Output
 
 if TYPE_CHECKING:
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "State",
+    "Metrics",
     "simulate_order",
     "simulate_solution",
 ]
@@ -404,20 +405,30 @@ def simulate_order(
     assert False
 
 
+@dataclass
+class Metrics:
+    cost: int
+    max_time: int
+    total_time: int
+    num_wires: int
+
+
 def simulate_solution(
     solution: Solution, time_limit: int = -1, debug: bool = False
 ) -> Metrics:
     if time_limit == -1 and solution.solved:
         time_limit = solution.time
-    total_time = 0
-    max_time = 0
+    times = []
     for order_index in range(len(solution.level.order_signals)):
-        time = simulate_order(solution, order_index, time_limit=time_limit, debug=debug)
-        total_time += time
-        max_time = max(
-            time,
-            max_time,
+        times.append(
+            simulate_order(solution, order_index, time_limit=time_limit, debug=debug)
         )
+    max_time = max(times)
     if solution.solved and solution.time != max_time:
         raise InvalidSolutionError("evaluated time doesn't match stored time")
-    return Metrics(max_time=max_time, cost=solution.cost, total_time=total_time)
+    return Metrics(
+        cost=solution.cost,
+        max_time=max_time,
+        total_time=sum(times),
+        num_wires=len(solution.wires),
+    )

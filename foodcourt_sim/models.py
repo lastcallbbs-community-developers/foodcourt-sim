@@ -261,10 +261,3 @@ class MoveEntity:
     @functools.cached_property
     def dest(self) -> Position:
         return self.entity.position.shift_by(self.direction)
-
-
-@dataclass
-class Metrics:
-    max_time: int
-    cost: int
-    total_time: int
