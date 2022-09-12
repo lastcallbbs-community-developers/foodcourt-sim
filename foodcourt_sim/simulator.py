@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -51,7 +50,7 @@ class State:
 
     @classmethod
     def from_solution(cls, solution: Solution, order_index: int) -> State:
-        modules = deepcopy(solution.modules)
+        modules = [m.copy(solution.level) for m in solution.modules]
         # build wire map
         wire_map = {}
         for wire in solution.wires:
@@ -176,14 +175,18 @@ def order_moves(all_moves: list[MoveEntity]) -> list[set[Position]]:
         dests.add(move.dest)
         graph.add_edge(move.dest, move.source)
 
-    # condense any loops to a single node
-    cond = nx.condensation(graph)
+    try:
+        return [{pos} for pos in nx.topological_sort(graph) if pos in dests]
+    except nx.NetworkXUnfeasible:
+        # graph has loops
+        # condense any loops to a single node
+        cond = nx.condensation(graph)
 
-    # get the topological order of the condensed graph
-    return [
-        {pos for pos in cond.nodes[n]["members"] if pos in dests}
-        for n in nx.topological_sort(cond)
-    ]
+        # get the topological order of the condensed graph
+        return [
+            {pos for pos in cond.nodes[n]["members"] if pos in dests}
+            for n in nx.topological_sort(cond)
+        ]
 
 
 def resolve_movement(

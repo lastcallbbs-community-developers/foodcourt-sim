@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, NamedTuple, Optional, Sequence, Type, Union
 
@@ -102,7 +103,10 @@ class Module:
         self.signals = Signals(len(self.jacks) if self.on_rack else 0)
 
     def __hash__(self) -> int:
-        return hash((self.id, self.floor_position, self.rack_position))
+        return hash((self.id.value, self.floor_position, self.rack_position))
+
+    def copy(self, level: Level) -> Module:
+        return dataclasses.replace(self, level=level)
 
     def emergency_stop(self, message: str, *extra_positions: Position) -> EmergencyStop:
         return EmergencyStop(message, self.floor_position, *extra_positions)
@@ -155,7 +159,13 @@ class Module:
         """Return the number of currently active input signals."""
         return sum(self._get_signals())
 
-    def _set_signal(self, key: Union[str, int], value: bool, state: State) -> None:
+    def _set_signal(
+        self,
+        key: Union[str, int],
+        value: bool,
+        state: State,
+        seen: Optional[set[tuple[Module, int]]] = None,
+    ) -> None:
         """Set the signal value on an output jack for the next tick."""
         assert self.on_rack, "called _set_signal on non-rack module"
         if isinstance(key, str):
@@ -165,13 +175,15 @@ class Module:
         assert (
             self.jacks[idx].direction is JackDirection.OUT
         ), f"tried to set value of input jack {key}"
+        prev_value = self.signals.next_values[idx]
         self.signals.next_values[idx] = value
-        # print(f"setting signal {key} on module {self.id.name} @ {self.rack_position}")
-        if (self, idx) in state.wire_map:
+        if value != prev_value and (self, idx) in state.wire_map:
             other, other_idx = state.wire_map[self, idx]
-            # print(f"  propagating to {other.jacks[other_idx].name} on {other.id.name} @ {other.rack_position}")
-            # pylint: disable-next=protected-access  # other is always a Module
-            other._set_input_signal(other_idx, value, state, set())
+            if seen is None:
+                seen = set()
+            if (other, other_idx) not in seen:
+                # pylint: disable-next=protected-access  # other is always a Module
+                other._set_input_signal(other_idx, value, state, seen)
 
     def _set_input_signal(
         self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
@@ -179,12 +191,15 @@ class Module:
         """Used by Multimixers to propagate signals immediately."""
         del state
         assert self.jacks[idx].direction is JackDirection.IN
-        if (self, idx) in seen:
-            return
         self.signals.next_values[idx] = value
         seen.add((self, idx))
 
-    def _set_signals(self, values: Sequence[bool], state: State) -> None:
+    def _set_signals(
+        self,
+        values: Sequence[bool],
+        state: State,
+        seen: Optional[set[tuple[Module, int]]] = None,
+    ) -> None:
         """Set the signal values on a set of output jacks for the next tick."""
         output_jack_indices = [
             i
@@ -193,8 +208,10 @@ class Module:
         ]
         if len(output_jack_indices) != len(values):
             raise ValueError("slice and values lengths don't match")
+        if seen is None:
+            seen = set()
         for i, value in zip(output_jack_indices, values):
-            self._set_signal(i, value, state)
+            self._set_signal(i, value, state, seen)
 
     def debug_str(self) -> str:
         return ""
@@ -257,7 +274,6 @@ class Scanner(Module):
             return []
         target = state.get_entity(self.floor_position.shift_by(self.direction))
         enable = target is not None and target.id in (EntityId.TRAY, EntityId.MULTITRAY)
-        self._set_signal("SCAN", enable, state)
         if enable:
             values = [enable, *state.order_signals]
         else:
@@ -627,7 +643,8 @@ class Sensor(Module):
         if stage != 2:
             return []
         target = state.get_entity(self.floor_position.shift_by(self.direction))
-        self._set_signal("SENSE", target is not None, state)
+        if target is not None:
+            self._set_signal("SENSE", True, state)
         return []
 
 
@@ -699,8 +716,8 @@ class Sorter(EjectingModule):
                 direction = self.direction.right()
             if direction is not None:
                 return [MoveEntity(target, direction)]
-        elif stage == 2:
-            self._set_signal("SENSE", target is not None, state)
+        elif stage == 2 and target is not None:
+            self._set_signal("SENSE", True, state)
         return []
 
 
@@ -736,8 +753,7 @@ class Stacker(Module):
 
         if not dry_run:
             stack_error = self.emergency_stop(
-                f"These products cannot be stacked: {base}, {move.entity}",
-                move.source,
+                "These products cannot be stacked.", move.source
             )
             # stacking logic
             base.add_to_stack(state, move.entity, stack_error)
@@ -768,8 +784,8 @@ class Cooker(EjectingModule):
                     }[self.id]
                 )
                 target.operations.append(op)
-        elif stage == 2:
-            self._set_signal("SENSE", target is not None, state)
+        elif stage == 2 and target is not None:
+            self._set_signal("SENSE", True, state)
         return []
 
 
@@ -1133,17 +1149,10 @@ class Multimixer(Module):
     def _set_input_signal(
         self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
     ) -> None:
-        # TODO: maybe this should check whether the output value actually changed?
-        if (self, idx) in seen:
-            return
         super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = any(self.signals.next_values[:4])
-        for out_idx in range(4, 8):
-            if (self, out_idx) in state.wire_map:
-                other, other_idx = state.wire_map[self, out_idx]
-                # pylint: disable-next=protected-access  # other is always a Module
-                other._set_input_signal(other_idx, value, state, seen)
+        self._set_signals([value] * 4, state, seen)
 
 
 class MultimixerEnable(Module):
@@ -1159,16 +1168,10 @@ class MultimixerEnable(Module):
     def _set_input_signal(
         self, idx: int, value: bool, state: State, seen: set[tuple[Module, int]]
     ) -> None:
-        if (self, idx) in seen:
-            return
         super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = self.signals.next_values[0] and any(self.signals.next_values[1:4])
-        for out_idx in range(4, 7):
-            if (self, out_idx) in state.wire_map:
-                other, other_idx = state.wire_map[self, out_idx]
-                # pylint: disable-next=protected-access  # other is always a Module
-                other._set_input_signal(other_idx, value, state, seen)
+        self._set_signals([value] * 3, state, seen)
 
 
 @dataclass
@@ -1199,8 +1202,8 @@ class SmallCounter(Module):
             for signal, increment in zip(self._get_signals(), self.values):
                 if signal:
                     self.count = max(-99, min(self.count + increment, 99))
-        elif stage == 2:
-            self._set_signal("ZERO", self.count == 0, state)
+        elif stage == 2 and self.count == 0:
+            self._set_signal("ZERO", True, state)
         return []
 
 
@@ -1240,8 +1243,10 @@ class BigCounter(Module):
                 if signal:
                     self.count = max(-99, min(self.count + increment, 99))
         elif stage == 2:
-            self._set_signal("ZERO", self.count == 0, state)
-            self._set_signal("POS", self.count > 0, state)
+            if self.count == 0:
+                self._set_signal("ZERO", True, state)
+            elif self.count > 0:
+                self._set_signal("POS", True, state)
         return []
 
 
