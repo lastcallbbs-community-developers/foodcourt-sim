@@ -5,8 +5,15 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+import networkx as nx
+
 from .enums import JackDirection
-from .errors import EmergencyStop
+from .errors import (
+    EmergencyStop,
+    InternalSimulationError,
+    SimulationError,
+    TimeLimitExceeded,
+)
 from .models import Direction, MoveEntity, Position
 from .modules import MainInput, Output
 
@@ -18,7 +25,6 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "MoveEntity",
     "State",
     "simulate_order",
     "simulate_solution",
@@ -109,7 +115,9 @@ class State:
                     print(f"{indent}  {jack.name} >")
                 else:
                     print(f"{indent}  > {jack.name}")
-        for pos, entities in self.entities.items():
+        for pos, entities in sorted(
+            self.entities.items(), key=lambda x: (-x[0].row, x[0].column)
+        ):
             print(f"{indent}{pos}:")
             for entity in entities:
                 print(f"{indent}  {entity}")
@@ -136,15 +144,13 @@ def handle_moves_to_empty(
     if state.get_entity(dest) is not None:
         if force:
             # collision with something already on the floor
-            raise EmergencyStop(
-                "These products have collided.", dest, moves[0].position
-            )
+            raise EmergencyStop("These products have collided.", dest, moves[0].source)
         return None
     if force:
         if len(moves) > 1:
             # collision between entities moving onto the same empty space
             raise EmergencyStop(
-                "These products have collided.", dest, *[m.position for m in moves]
+                "These products have collided.", dest, *[m.source for m in moves]
             )
         return moves[0]
     # move priority: down, right, left, up
@@ -152,8 +158,120 @@ def handle_moves_to_empty(
     return min(moves, key=lambda m: priority.index(m.direction))
 
 
-def update_entities(
-    state: State, all_moves: list[MoveEntity], output_pos: Position
+def order_moves(all_moves: list[MoveEntity]) -> list[set[Position]]:
+    """
+    Return a list of groups of destination positions in the order their movements
+    should be evaluated.
+    """
+
+    """General approach:
+    1. Construct DAGs from groups of potentially conflicting movements, where `dest` of
+       one or more MoveEntity is `position` of another MoveEntity.
+    2. Get the topological ordering of the DAGs.
+    """
+
+    graph = nx.DiGraph()
+    dests = set()
+    for move in all_moves:
+        dests.add(move.dest)
+        graph.add_edge(move.dest, move.source)
+
+    # condense any loops to a single node
+    cond = nx.condensation(graph)
+
+    # get the topological order of the condensed graph
+    return [
+        {pos for pos in cond.nodes[n]["members"] if pos in dests}
+        for n in nx.topological_sort(cond)
+    ]
+
+
+def resolve_movement(
+    state: State,
+    dest: Position,
+    moves: list[MoveEntity],
+    debug: bool,
+) -> None:
+    forced = [m for m in moves if m.force]
+    optional = [m for m in moves if not m.force]
+    if debug:
+        print(f"Moves to {dest}:")
+        if forced:
+            print(f"  {forced=}")
+        if optional:
+            print(f"  {optional=}")
+    for move_group in (forced, optional):
+        if not move_group:
+            continue
+        module = state.get_module(dest)
+        if module is None:
+            accepted = handle_moves_to_empty(dest, state, move_group)
+        else:
+            accepted = module.handle_moves(state, move_group)
+        if debug and (len(forced) + len(optional) > 1 or accepted is None):
+            print(f"    accepted: {accepted}")
+        if accepted is not None:
+            state.move_entity(accepted.entity, accepted.direction)
+            # don't need to try next move group
+            break
+    assert len(forced) <= 1
+
+
+def resolve_loop(
+    state: State,
+    dests: set[Position],
+    by_dest: dict[Position, list[MoveEntity]],
+    loop_moves: list[MoveEntity],
+    debug: bool,
+) -> None:
+    assert len(set(m.dest for m in loop_moves)) == len(dests)
+    accepted_moves = []
+    # For each position, see if the move that would be accepted will
+    # keep the entity in the loop. If true for all positions, then all
+    # moves will be performed, else none will.
+    do_loop = True
+    if debug:
+        print(f"\n*** Loop detected at {dests} ***")
+    for dest in dests:
+        forced = [m for m in by_dest[dest] if m.force]
+        optional = [m for m in by_dest[dest] if not m.force]
+        if debug:
+            print(f"Moves to {dest}:")
+            if forced:
+                print(f"  {forced=}")
+            if optional:
+                print(f"  {optional=}")
+        for move_group in (forced, optional):
+            if not move_group:
+                continue
+            module = state.get_module(dest)
+            assert module is not None, "impossible move off an empty space"
+            accepted = module.handle_moves(
+                state, move_group, ignore_collisions=True, dry_run=True
+            )
+            if debug and (len(forced) + len(optional) > 1 or accepted is None):
+                print(f"    accepted: {accepted}")
+            if accepted not in loop_moves:
+                do_loop = False
+                break
+            accepted_moves.append(accepted)
+            if accepted is not None:
+                # don't need to try next move group
+                break
+        assert len(forced) <= 1
+    if do_loop:
+        assert sorted(accepted_moves) == sorted(
+            loop_moves
+        ), "accepted_moves doesn't match loop_moves"
+        for move in accepted_moves:
+            assert module is not None
+            accepted = module.handle_moves(state, [move], ignore_collisions=True)
+            assert accepted is move
+            state.move_entity(move.entity, move.direction)
+
+
+def move_entities(
+    state: State, all_moves: list[MoveEntity], output_pos: Position, debug: bool
 ) -> bool:
     """Move entities around and handle collisions.
 
@@ -161,43 +279,40 @@ def update_entities(
     """
     ret = False
 
-    # TODO: evaluate movements in the right order, to avoid spurious backups
-    # should be: move entities off a space, then move entities on
-    # forced movements should be evaluated first
-    by_dest: dict[Position, tuple[list[MoveEntity], list[MoveEntity]]] = defaultdict(
-        lambda: ([], [])
-    )
+    by_dest: dict[Position, list[MoveEntity]] = defaultdict(list)
+
     for move in all_moves:
-        pos = move.entity.position
-        if pos == output_pos and move.direction is Direction.DOWN:
+        if move.source == output_pos and move.direction is Direction.DOWN:
             ret = True
             state.remove_entity(move.entity)
             continue
-        # group MoveEntity by destination
         if not (0 <= move.dest.row < 7 and 0 <= move.dest.column < 6):
-            raise EmergencyStop("Products cannot leave the factory.", pos)
-        idx = 0 if move.force else 1
-        by_dest[move.dest][idx].append(move)
-    for dest, (forced, optional) in by_dest.items():
-        print(f"Moves to {dest}:\n  {forced=}\n  {optional=}")
-        for moves in (forced, optional):
-            if not moves:
-                continue
-            module = state.get_module(dest)
-            if module is None:
-                accepted = handle_moves_to_empty(dest, state, moves)
-            else:
-                accepted = module.handle_moves(state, moves)
-            if accepted is not None:
-                state.move_entity(accepted.entity, accepted.direction)
-                break
+            raise EmergencyStop(
+                "Products cannot leave the factory.", move.source, move.dest
+            )
+        # group moves by destination
+        by_dest[move.dest].append(move)
+
+    order = order_moves([m for m in all_moves if m.dest in by_dest])
+    for dests in order:
+        if not dests:
+            continue
+        if len(dests) == 1:
+            # single destination, not a loop
+            dest = next(iter(dests))
+            resolve_movement(state, dest, by_dest[dest], debug)
+        else:
+            # entity movements make a closed loop
+            loop_moves = [m for m in all_moves if m.dest in dests and m.source in dests]
+            resolve_loop(state, dests, by_dest, loop_moves, debug)
+
     # check for collisions
     for dest in by_dest:
         # either one of the moves should have succeeded, or whatever blocked
         # the moves should still be there
         assert dest in state.entities
         if len(state.entities[dest]) > 1:
-            raise EmergencyStop("Unhandled entity collision", dest)
+            raise InternalSimulationError("Unhandled entity collision", dest)
 
     return ret
 
@@ -229,7 +344,7 @@ def simulate_order(
     level: Level,
     solution: Solution,
     order_index: int,
-    tick_limit: int = -1,
+    time_limit: int = -1,
     debug: bool = False,
 ) -> int:
     """Return the number of ticks the order took to complete."""
@@ -243,31 +358,44 @@ def simulate_order(
     time = 0
     successful_output = False
     try:
-        main_input.zeroth_tick(state)
-        propagate_signals(state)
-        if debug:
-            print(f"Tick {time}:")
-            state.dump(indent="  ")
-        while True:
-            time += 1
-            actions = update_modules(state, stage=1)
-            successful_output |= update_entities(state, actions, output.floor_position)
-            update_modules(state, stage=2)
-            # keep simulating until all entities are removed
-            if successful_output and not state.entities:
-                return time
+        try:
+            main_input.zeroth_tick(state)
             propagate_signals(state)
-            # pause here in single-step mode
             if debug:
                 print(f"Tick {time}:")
                 state.dump(indent="  ")
-            if tick_limit != -1 and time > tick_limit:
-                raise EmergencyStop("Tick limit reached.", Position(-1, -1))
-    except EmergencyStop as e:
-        # annotate exception with the current time
+            while True:
+                time += 1
+                moves = update_modules(state, stage=1)
+                successful_output |= move_entities(
+                    state, moves, output.floor_position, debug=debug
+                )
+                update_modules(state, stage=2)
+                # keep simulating until all entities are removed
+                if successful_output and not state.entities:
+                    return time
+                propagate_signals(state)
+                # pause here in single-step mode
+                if debug:
+                    print(f"Tick {time}:")
+                    state.dump(indent="  ")
+                if time_limit != -1 and time >= time_limit:
+                    raise TimeLimitExceeded()
+        except AssertionError as e:
+            # reraise assertion errors as InternalSimulationErrors
+            raise InternalSimulationError(str(e)) from e
+    except SimulationError as e:
+        # annotate error with the current time
         e.time = time
-        print(f"\n! EMERGENCY STOP !\nTick {time}:")
-        state.dump(indent="  ")
+        if debug:
+            if isinstance(e, EmergencyStop):
+                desc = "*** EMERGENCY STOP ***"
+            elif isinstance(e, InternalSimulationError):
+                desc = "*** INTERNAL SIMULATION ERROR ***"
+            else:
+                desc = "*** SIMULATION ERROR ***"
+            print(f"\n{desc}\nTick {time}:")
+            state.dump(indent="  ")
         raise
 
     assert False

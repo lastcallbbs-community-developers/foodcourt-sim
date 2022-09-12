@@ -25,8 +25,8 @@ def test_roundtrip(data: bytes) -> None:
 if __name__ == "__main__":
     with open(sys.argv[1], "rb") as f:
         raw = f.read()
-    sol, level_ = read_solution(raw)
-    sol.check(level_)
+    sol = read_solution(raw)[0]
+    sol.check()
 
     test_roundtrip(raw)
 

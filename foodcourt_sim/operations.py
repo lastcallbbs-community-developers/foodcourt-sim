@@ -81,8 +81,8 @@ class _DispenseFluidMixed(Dispense):
     topping_2: ToppingId
 
     def __post_init__(self):
-        assert self.topping != self.topping_2, "duplicate mixed topping"
-        assert self.topping < self.topping_2, "mixed toppings are out of order"
+        assert self.topping != self.topping_2, "duplicate mixed fluid"
+        assert self.topping < self.topping_2, "mixed fluids are out of order"
 
 
 def DispenseFluidMixed(topping_1: ToppingId, topping_2: ToppingId) -> Operation:

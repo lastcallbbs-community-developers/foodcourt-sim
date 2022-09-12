@@ -4,9 +4,10 @@ import functools
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, unique
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from .enums import LevelId, ModuleId
+from .errors import InvalidSolutionError
 
 if TYPE_CHECKING:
     from .entities import Entity
@@ -149,9 +150,7 @@ class Solution:  # pylint: disable=too-many-instance-attributes
     #             f"jack {jack_1} to jack {jack_2} of {module_2.id} (index {wire.module_2})"
     #         )
 
-    def check(self, level: Level) -> None:
-        assert level.id == self.level_id
-
+    def check(self) -> None:
         main_input_index = -1
         occupied_rack_slots = [[False] * 11 for _ in range(3)]
         module_indices: dict[ModuleId, list[int]] = defaultdict(list)
@@ -159,60 +158,96 @@ class Solution:  # pylint: disable=too-many-instance-attributes
         for i, module in enumerate(self.modules):
             module.check()
             # make sure main input and scanners match the level
-            if 200 <= module.id.value <= 220:
-                assert (
-                    main_input_index == -1
-                ), f"duplicate main input module found at index {i} (first was at {main_input_index})"
+            if (
+                ModuleId.MAIN_INPUT_BASE.value
+                < module.id.value
+                <= ModuleId.MAIN_INPUT_BASE.value + len(LevelId)
+            ):
+                if main_input_index != -1:
+                    raise InvalidSolutionError(
+                        f"duplicate main input module found at index {i} (first was at {main_input_index})"
+                    )
                 main_input_index = i
-                assert (
-                    module.id.value == level.id.value + 199
-                ), f"mismatched main input ({module.id}) for level {level.internal_name} at index {i}"
-            if 150 <= module.id.value <= 170:
-                assert (
-                    module.id.value == level.id.value + 149
-                ), f"incorrect scanner ({module.id}) for level {level.internal_name} at index {i}"
+                if (
+                    module.id.value
+                    != ModuleId.MAIN_INPUT_BASE.value + self.level_id.value
+                ):
+                    raise InvalidSolutionError(
+                        f"mismatched main input ({module.id}) for level {self.level_id.name} at index {i}"
+                    )
+            if (
+                ModuleId.SCANNER_BASE.value
+                < module.id.value
+                <= ModuleId.SCANNER_BASE.value + len(LevelId)
+            ):
+                if module.id.value != ModuleId.SCANNER_BASE.value + self.level_id.value:
+                    raise InvalidSolutionError(
+                        f"incorrect scanner ({module.id}) for level {self.level_id.name} at index {i}"
+                    )
             # check for rack collisions
             if module.on_rack:
                 pos = module.rack_position
-                assert not (
-                    occupied_rack_slots[pos.row][pos.column]
-                ), f"rack collision at {module.rack_position}"
+                if occupied_rack_slots[pos.row][pos.column]:
+                    raise InvalidSolutionError(
+                        f"rack collision at {module.rack_position}"
+                    )
                 for i in range(module.rack_width):
                     occupied_rack_slots[pos.row][pos.column + i] = True
             module_indices[module.id].append(i)
             cost += module.price
-        assert main_input_index != -1, "no main input module found"
+        if main_input_index == -1:
+            raise InvalidSolutionError("no main input module found")
 
-        if level.id is LevelId.SWEET_HEAT_BBQ:
-            assert (
-                len(module_indices[ModuleId.WASTE_BIN]) <= 2
-            ), "too many waste bins for Sweet Heat BBQ (limit of 2)"
+        if (
+            self.level_id is LevelId.SWEET_HEAT_BBQ
+            and len(module_indices[ModuleId.WASTE_BIN]) > 2
+        ):
+            raise InvalidSolutionError(
+                "too many waste bins for Sweet Heat BBQ (limit of 2)"
+            )
+        if (
+            self.level_id is LevelId.DA_WINGS
+            and len(module_indices[ModuleId.WASTE_BIN]) > 3
+        ):
+            raise InvalidSolutionError("too many waste bins for Da Wings (limit of 3)")
 
         # check that wires reference existing modules
         num_modules = len(self.modules)
         for wire in self.wires:
-            assert 0 <= wire.module_1 < num_modules
-            assert 0 <= wire.module_2 < num_modules
+            if not 0 <= wire.module_1 < num_modules:
+                raise InvalidSolutionError(
+                    f"module index {wire.module_1} is out of bounds"
+                )
+            if not 0 <= wire.module_2 < num_modules:
+                raise InvalidSolutionError(
+                    f"module index {wire.module_1} is out of bounds"
+                )
             module_1 = self.modules[wire.module_1]
             module_2 = self.modules[wire.module_2]
-            assert (
-                0 <= wire.jack_1 < len(module_1.jacks)
-            ), f"{module_1}, jack {wire.jack_1}"
-            assert (
-                0 <= wire.jack_2 < len(module_2.jacks)
-            ), f"{module_2}, jack {wire.jack_2}"
+            if not 0 <= wire.jack_1 < len(module_1.jacks):
+                raise InvalidSolutionError(
+                    f"jack index {wire.jack_1} is out of bounds for module {module_1}"
+                )
+            if not 0 <= wire.jack_2 < len(module_2.jacks):
+                raise InvalidSolutionError(
+                    f"jack index {wire.jack_2} is out of bounds for module {module_2}"
+                )
 
             # check that in jacks are only connected to out jacks and vice versa
-            assert (
+            if (
                 module_1.jacks[wire.jack_1].direction
-                is not module_2.jacks[wire.jack_2].direction
-            ), f"{module_1}, jack {wire.jack_1} is connected to {module_2}, jack {wire.jack_2} with the same direction"
+                is module_2.jacks[wire.jack_2].direction
+            ):
+                raise InvalidSolutionError(
+                    f"{module_1}, jack {wire.jack_1} is connected to {module_2}, jack {wire.jack_2} with the same direction"
+                )
 
-        if self.solved:
-            assert self.cost == cost, "calculated cost doesn't match recorded cost"
+        if self.solved and self.cost != cost:
+            raise InvalidSolutionError("calculated cost doesn't match recorded cost")
 
 
-@dataclass(frozen=True)
+@functools.total_ordering  # optimization note: this adds some overhead (see the docs)
+@dataclass(frozen=True, eq=False)
 class MoveEntity:
     """Represents a pending entity movement on the factory floor."""
 
@@ -220,8 +255,26 @@ class MoveEntity:
     direction: Direction
     force: bool = True
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MoveEntity):
+            return NotImplemented
+        return (id(self.entity), self.direction, self.force) == (
+            id(other.entity),
+            other.direction,
+            other.force,
+        )
+
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, MoveEntity):
+            return NotImplemented
+        return (id(self.entity), self.direction.value, self.force) < (
+            id(other.entity),
+            other.direction.value,
+            other.force,
+        )
+
     @functools.cached_property
-    def position(self) -> Position:
+    def source(self) -> Position:
         return self.entity.position
 
     @functools.cached_property

@@ -4,6 +4,7 @@ import struct
 from typing import Any, Union
 
 from .enums import LevelId, ModuleId, MusicMode, PaintColor, PaintMask
+from .errors import InvalidSolutionError
 from .levels import BY_ID, Level
 from .models import Direction, Position, Solution, Wire
 from .modules import (
@@ -20,7 +21,9 @@ from .modules import (
 
 def read_bytes(stream: io.BufferedIOBase, size: int) -> bytes:
     b = stream.read(size)
-    assert len(b) == size
+    assert (
+        len(b) == size
+    ), f"could not read enough bytes (requested: {size}, got: {len(b)})"
     return b
 
 
@@ -38,7 +41,7 @@ def write_int(stream: io.BufferedIOBase, value: int, size: int) -> None:
 
 def read_bool(stream: io.BufferedIOBase) -> bool:
     x = read_bytes(stream, 1)[0]
-    assert x in [0, 1]
+    assert x in [0, 1], f"invalid bool value {x:#x}"
     return x == 1
 
 
@@ -137,7 +140,10 @@ def read_solution(data: Union[bytes, io.BufferedIOBase]) -> tuple[Solution, Leve
     else:
         stream = io.BytesIO(data)
     version = read_int(stream, 4)
-    assert 1000 <= version <= 1013
+    if not 1000 <= version <= 1013:
+        raise InvalidSolutionError(
+            f"invalid solution version {version} (must be between 1000 and 1013)"
+        )
 
     level_id = LevelId(read_int(stream, 4))
     name = read_string(stream)

@@ -40,8 +40,8 @@ def raw_solution(request):
 
 
 def test_check(raw_solution):  # pylint: disable=redefined-outer-name
-    solution, level = read_solution(raw_solution)
-    solution.check(level)
+    solution = read_solution(raw_solution)[0]
+    solution.check()
 
 
 def test_roundtrip(raw_solution):  # pylint: disable=redefined-outer-name

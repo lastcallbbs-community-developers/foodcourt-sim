@@ -12,6 +12,8 @@ from .entities import (
     Nori,
     PaintableCup,
     PizzaDough,
+    SushiBowl,
+    SushiPlate,
 )
 from .enums import (
     EntityId,
@@ -22,7 +24,12 @@ from .enums import (
     PaintMask,
     ToppingId,
 )
-from .errors import EmergencyStop, TooManyActiveInputs
+from .errors import (
+    EmergencyStop,
+    InternalSimulationError,
+    InvalidSolutionError,
+    TooManyActiveInputs,
+)
 from .models import Direction, MoveEntity, RelativeDirection
 from .operations import (
     CoatFluid,
@@ -67,6 +74,7 @@ class Signals:
         self.next_values = self.values.copy()
 
     def update(self) -> None:
+        """Advance to the next tick and clear all pending signals."""
         self.values = self.next_values.copy()
         self.next_values = [False] * len(self.values)
 
@@ -104,14 +112,17 @@ class Module:
         hash(self)
         # check that positions are in-bounds
         if self.on_floor:
-            assert 0 <= self.floor_position.row < 7, "floor position out-of-bounds"
-            assert 0 <= self.floor_position.column < 6, "floor position out-of-bounds"
+            if not (
+                0 <= self.floor_position.row < 7 and 0 <= self.floor_position.column < 6
+            ):
+                raise InvalidSolutionError("Floor position out-of-bounds")
         if self.on_rack:
-            assert 0 <= self.rack_position.row < 3, "rack position out-of-bounds"
-            assert self.rack_position.column >= 0, "rack position out-of-bounds"
-            assert (
-                self.rack_position.column + self.rack_width <= 11
-            ), "rack position out-of-bounds"
+            if not (
+                0 <= self.rack_position.row < 3
+                and self.rack_position.column >= 0
+                and self.rack_position.column + self.rack_width <= 11
+            ):
+                raise InvalidSolutionError("Rack position out-of-bounds")
 
         assert len(self.signals.values) == len(self.jacks)
         if not self.on_rack:
@@ -120,6 +131,7 @@ class Module:
             ), f"non-rack module shouldn't have any jacks: {self.jacks}"
 
     def _get_signal(self, key: Union[str, int]) -> bool:
+        """Return the current signal value on an input jack."""
         assert self.on_rack, "called _get_signal on non-rack module"
         if isinstance(key, str):
             idx = next(i for i, jack in enumerate(self.jacks) if jack.name == key)
@@ -130,22 +142,21 @@ class Module:
         ), f"tried to get value of output jack {key}"
         return self.signals.values[idx]
 
-    def _get_signals(self, slc: slice = slice(None)) -> list[bool]:
+    def _get_signals(self) -> list[bool]:
+        """Return the current signal values for all input jacks."""
         assert self.on_rack, "called _get_signals on non-rack module"
-        assert all(
-            jack.direction is JackDirection.IN for jack in self.jacks[slc]
-        ), f"tried to get values of output jack {slc}"
-        return self.signals.values[slc]
+        return [
+            value
+            for value, jack in zip(self.signals.values, self.jacks)
+            if jack.direction is JackDirection.IN
+        ]
 
     def _get_signal_count(self) -> int:
-        assert self.on_rack, "called _get_signal_count on non-rack module"
-        return sum(
-            value
-            for jack, value in zip(self.jacks, self.signals.values)
-            if jack.direction is JackDirection.IN
-        )
+        """Return the number of currently active input signals."""
+        return sum(self._get_signals())
 
     def _set_signal(self, key: Union[str, int], value: bool, state: State) -> None:
+        """Set the signal value on an output jack for the next tick."""
         assert self.on_rack, "called _set_signal on non-rack module"
         if isinstance(key, str):
             idx = next(i for i, jack in enumerate(self.jacks) if jack.name == key)
@@ -173,10 +184,16 @@ class Module:
         self.signals.next_values[idx] = value
         seen.add((self, idx))
 
-    def _set_signals(self, slc: slice, values: Sequence[bool], state: State) -> None:
-        if len(self.signals.next_values[slc]) != len(values):
+    def _set_signals(self, values: Sequence[bool], state: State) -> None:
+        """Set the signal values on a set of output jacks for the next tick."""
+        output_jack_indices = [
+            i
+            for i, jack in enumerate(self.jacks)
+            if jack.direction is JackDirection.OUT
+        ]
+        if len(output_jack_indices) != len(values):
             raise ValueError("slice and values lengths don't match")
-        for i, value in zip(range(len(self.signals.next_values))[slc], values):
+        for i, value in zip(output_jack_indices, values):
             self._set_signal(i, value, state)
 
     def debug_str(self) -> str:
@@ -188,25 +205,36 @@ class Module:
         return []
 
     def handle_moves(
-        self, state: State, moves: list[MoveEntity]
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
     ) -> Optional[MoveEntity]:
-        # NB: this does not handle collisions with stopped entities
-        del state
+        """Resolve movements onto this module.
+
+        Return the movement to perform, or None if no movement should be performed.
+
+        If `ignore_collisions` is True, then consider the current position to be
+        empty for the purposes of collision checking.
+        If `dry_run` is True, don't modify any simulation state.
+
+        Note: the default implementation does not handle collisions with
+        existing entities on this module.
+        """
+        del state, ignore_collisions, dry_run
         if len(moves) > 1:
             raise self.emergency_stop(
-                "These products have collided.", *[m.position for m in moves]
+                "These products have collided.", *[m.source for m in moves]
             )
         if (
             moves[0].direction.back().relative_to(self.direction)
             not in self._input_directions
         ):
             raise self.emergency_stop(
-                "Products cannot enter from this direction.", moves[0].position
+                "Products cannot enter from this direction.", moves[0].source
             )
         return moves[0]
-
-    def will_collide(self, state: State) -> bool:
-        return state.get_entity(self.floor_position) is not None
 
 
 # Module subclasses
@@ -231,10 +259,10 @@ class Scanner(Module):
         enable = target is not None and target.id in (EntityId.TRAY, EntityId.MULTITRAY)
         self._set_signal("SCAN", enable, state)
         if enable:
-            values = state.order_signals
+            values = [enable, *state.order_signals]
         else:
-            values = (False,) * len(state.order_signals)
-        self._set_signals(slice(1, None), values, state)
+            values = [False] * len(self.jacks)
+        self._set_signals(values, state)
         return []
 
 
@@ -252,12 +280,14 @@ class MainInput(Module):
         super().__post_init__(level)
 
     def check(self) -> None:
-        assert self.floor_position.row == 6
-        assert self.direction is Direction.DOWN
+        if self.floor_position.row != 6:
+            raise InvalidSolutionError("Tray input must be on the top row")
+        if self.direction is not Direction.DOWN:
+            raise InvalidSolutionError("Tray input must face down")
 
     def zeroth_tick(self, state: State) -> None:
         self._set_signal("START", True, state)
-        self._set_signals(slice(1, None), state.order_signals, state)
+        self._set_signals([True, *state.order_signals], state)
         tray: Entity
         if state.level.multi:
             tray = Multitray(position=self.floor_position)
@@ -271,7 +301,7 @@ class MainInput(Module):
         tray = state.get_entity(self.floor_position)
         if tray is not None:
             # only on first tick
-            self._set_signals(slice(None, None), [False] * len(self.jacks), state)
+            self._set_signals([False] * len(self.jacks), state)
             return [MoveEntity(tray, self.direction)]
         return []
 
@@ -301,7 +331,7 @@ class EntityInput(Input):
     def update(self, stage: int, state: State) -> list[MoveEntity]:
         if stage != 1:
             return []
-        input_count = sum(self._get_signals(slice(None)))
+        input_count = sum(self._get_signals())
         if input_count > 1:
             raise TooManyActiveInputs(self)
         if input_count == 0:
@@ -326,6 +356,10 @@ class EntityInput(Input):
             entity = Cup(position=self.floor_position, capacity=capacity)
         elif eid is EntityId.NORI:
             entity = Nori(position=self.floor_position)
+        elif eid is EntityId.PLATE:
+            entity = SushiPlate(position=self.floor_position)
+        elif state.level.id is LevelId.SUSHI_YEAH and eid is EntityId.BOWL:
+            entity = SushiBowl(position=self.floor_position)
         else:
             entity = Entity(id=eid, position=self.floor_position)
         state.add_entity(entity)
@@ -452,10 +486,13 @@ class HalfToppingDispenser(ToppingInput):
 
     def check(self) -> None:
         super().check()
-        assert self.direction in (
+        if self.direction not in (
             Direction.UP,
             Direction.DOWN,
-        ), "Pizza topping dispenser can only face up or down"
+        ):
+            raise InvalidSolutionError(
+                "Pizza topping dispenser can only face up or down"
+            )
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
         if stage != 1:
@@ -489,11 +526,20 @@ class Conveyor(Module):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
+        # dest = state.get_entity(self.floor_position.shift_by(self.direction))
+        # if dest is not None:
+        #     return []
         return [MoveEntity(target, self.direction, force=False)]
 
     def handle_moves(
-        self, state: State, moves: list[MoveEntity]
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
     ) -> Optional[MoveEntity]:
+        if not (state.get_entity(self.floor_position) is None or ignore_collisions):
+            return None
         priority = [
             RelativeDirection.BACK,
             RelativeDirection.RIGHT,
@@ -506,11 +552,6 @@ class Conveyor(Module):
                 m.direction.back().relative_to(self.direction)
             ),
         )
-
-        # TODO: make sure update order is correct
-        # if an upstream conveyor is processed before a downstream one, it may
-        # see the downstream conveyor as occupied, but its entity will actually
-        # move out of the way this tick
         return move
 
 
@@ -520,8 +561,10 @@ class Output(Module):
     price = 0
 
     def check(self) -> None:
-        assert self.floor_position.row == 0, "Output must be on bottom row"
-        assert self.direction is Direction.DOWN, "Output must face down"
+        if self.floor_position.row != 0:
+            raise InvalidSolutionError("Output must be on the bottom row")
+        if self.direction is not Direction.DOWN:
+            raise InvalidSolutionError("Output must face down")
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
         if stage != 1:
@@ -586,7 +629,53 @@ class Sensor(Module):
         return []
 
 
-class Sorter(Module):
+class EjectingModule(Module):
+    """Common code shared between Sorter, Cooker, and Espresso."""
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        # does not handle collisions with stopped entities
+        super().handle_moves(state, moves, ignore_collisions, dry_run)
+        priority = [
+            RelativeDirection.BACK,
+            RelativeDirection.RIGHT,
+            RelativeDirection.LEFT,
+            RelativeDirection.FRONT,
+        ]
+        move = min(
+            moves,
+            key=lambda m: priority.index(
+                m.direction.back().relative_to(self.direction)
+            ),
+        )
+
+        available = state.get_entity(self.floor_position) is None or ignore_collisions
+        if not available:
+            if any(jack.name == "EJECT" for jack in self.jacks):
+                # Cooker and Espresso
+                will_eject = self._get_signal("EJECT")
+            else:
+                # Sorter
+                will_eject = self._get_signal_count() == 1
+            if will_eject:
+                # we're going to move the current entity away this tick, which should
+                # have been processed already
+                raise InternalSimulationError(
+                    "move evaluation order is incorrect", self.floor_position
+                )
+        if not available:
+            if move.force:
+                raise self.emergency_stop("These products have collided.", move.source)
+            return None
+        return move
+
+
+class Sorter(EjectingModule):
     _MODULE_IDS = [ModuleId.SORTER]
     _input_directions = set(RelativeDirection)
     price = 10
@@ -612,42 +701,11 @@ class Sorter(Module):
             self._set_signal("SENSE", target is not None, state)
         return []
 
-    def handle_moves(
-        self, state: State, moves: list[MoveEntity]
-    ) -> Optional[MoveEntity]:
-        priority = [
-            RelativeDirection.BACK,
-            RelativeDirection.RIGHT,
-            RelativeDirection.LEFT,
-            RelativeDirection.FRONT,
-        ]
-        move = min(
-            moves,
-            key=lambda m: priority.index(
-                m.direction.back().relative_to(self.direction)
-            ),
-        )
 
-        available = state.get_entity(self.floor_position) is None
-        if self._get_signal_count() == 1:
-            # we're going to move the current entity away this tick
-            available = True
-        if not available:
-            if move.force:
-                raise self.emergency_stop(
-                    "These products have collided.", move.position
-                )
-            return None
-        return move
-
-
-@dataclass
 class Stacker(Module):
     _MODULE_IDS = [ModuleId.STACKER]
     price = 20
     jacks = [OutJack("STACK"), InJack("EJECT")]
-
-    stack: list[Entity] = field(default_factory=list)
 
     __hash__ = Module.__hash__
 
@@ -660,29 +718,32 @@ class Stacker(Module):
         return [MoveEntity(target, self.direction)]
 
     def handle_moves(
-        self, state: State, moves: list[MoveEntity]
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
     ) -> Optional[MoveEntity]:
         # does not handle collisions with stopped entities
-        super().handle_moves(state, moves)
+        super().handle_moves(state, moves, ignore_collisions, dry_run)
         assert len(moves) == 1, "Stacker only handles one move"
         move = moves[0]
-        assert move.dest == self.floor_position, "inconsistent move for Stacker"
-        assert move.direction is self.direction, "inconsistent move for Stacker"
         base = state.get_entity(self.floor_position)
-        if base is None:
+        if base is None or ignore_collisions:
             return move
-        # stacking logic
 
-        stack_error = self.emergency_stop(
-            f"These products cannot be stacked: {base}, {move.entity}",
-            move.entity.position,
-        )
-        base.add_to_stack(state, move.entity, stack_error)
-        self._set_signal("STACK", True, state)
+        if not dry_run:
+            stack_error = self.emergency_stop(
+                f"These products cannot be stacked: {base}, {move.entity}",
+                move.source,
+            )
+            # stacking logic
+            base.add_to_stack(state, move.entity, stack_error)
+            self._set_signal("STACK", True, state)
         return None
 
 
-class Cooker(Module):
+class Cooker(EjectingModule):
     _MODULE_IDS = [ModuleId.GRILL, ModuleId.FRYER, ModuleId.MICROWAVE]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
     price = 20
@@ -708,32 +769,6 @@ class Cooker(Module):
         elif stage == 2:
             self._set_signal("SENSE", target is not None, state)
         return []
-
-    def handle_moves(
-        self, state: State, moves: list[MoveEntity]
-    ) -> Optional[MoveEntity]:
-        priority = [
-            RelativeDirection.BACK,
-            RelativeDirection.FRONT,
-        ]
-        move = min(
-            moves,
-            key=lambda m: priority.index(
-                m.direction.back().relative_to(self.direction)
-            ),
-        )
-
-        available = state.get_entity(self.floor_position) is None
-        if self._get_signal("EJECT"):
-            # we're going to move the current entity away this tick
-            available = True
-        if not available:
-            if move.force:
-                raise self.emergency_stop(
-                    "These products have collided.", move.position
-                )
-            return None
-        return move
 
 
 class SimpleMachine(Module):
@@ -790,13 +825,6 @@ class DoubleSlicer(SimpleMachine):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        error = self.emergency_stop("This product cannot be sliced.")
-        if target.operations or target.stack:
-            raise error
-        if state.level.id not in self._LOOKUP:
-            raise error
-        if target.id not in self._LOOKUP[state.level.id]:
-            raise error
         eid = self._LOOKUP[state.level.id][target.id]
         if state.level.id in (LevelId.CAFE_TRISTE, LevelId.SUSHI_YEAH):
             state.remove_entity(target)
@@ -812,6 +840,26 @@ class DoubleSlicer(SimpleMachine):
             MoveEntity(entity_r, direction=self.direction.right()),
             MoveEntity(entity_l, direction=self.direction.left()),
         ]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be sliced.", move.source)
+        if target.operations or target.stack:
+            raise error
+        if state.level.id not in self._LOOKUP:
+            raise error
+        if target.id not in self._LOOKUP[state.level.id]:
+            raise error
+        return move
 
 
 class TripleSlicer(SimpleMachine):
@@ -998,7 +1046,7 @@ class Painter(Module):
 
 
 @dataclass
-class Espresso(Module):
+class Espresso(EjectingModule):
     _MODULE_IDS = [ModuleId.ESPRESSO]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
     price = 40
@@ -1010,10 +1058,11 @@ class Espresso(Module):
 
     def check(self) -> None:
         super().check()
-        assert self.direction in (
+        if self.direction not in (
             Direction.RIGHT,
             Direction.LEFT,
-        ), "Espresso machine can only face right or left"
+        ):
+            raise InvalidSolutionError("Espresso machine can only face right or left")
 
     def debug_str(self) -> str:
         return f"grind_count={self.grind_count}"
@@ -1052,8 +1101,6 @@ class Espresso(Module):
             target.remove_fluid(ToppingId.MILK)
             target.add_fluid(ToppingId.FOAM, error)
         return []
-
-    handle_moves = Cooker.handle_moves
 
 
 @dataclass
@@ -1135,19 +1182,22 @@ class SmallCounter(Module):
 
     def check(self) -> None:
         super().check()
-        assert len(self.values) == 2, "Invalid values for SmallCounter"
-        assert all(-9 <= x <= 9 for x in self.values), "Invalid values for SmallCounter"
+        assert len(self.values) == 2, "Invalid values length for SmallCounter"
+        if not all(-9 <= x <= 9 for x in self.values):
+            raise InvalidSolutionError(
+                "Small counter increment values must be between -9 and +9"
+            )
 
     def debug_str(self) -> str:
         return f"count={self.count}"
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
-        for signal, increment in zip(self._get_signals(slice(1, None)), self.values):
-            if signal:
-                self.count = max(-99, min(self.count + increment, 99))
-        self._set_signal("ZERO", self.count == 0, state)
+        if stage == 1:
+            for signal, increment in zip(self._get_signals(), self.values):
+                if signal:
+                    self.count = max(-99, min(self.count + increment, 99))
+        elif stage == 2:
+            self._set_signal("ZERO", self.count == 0, state)
         return []
 
 
@@ -1172,20 +1222,23 @@ class BigCounter(Module):
 
     def check(self) -> None:
         super().check()
-        assert len(self.values) == 4, "Invalid values for BigCounter"
-        assert all(-99 <= x <= 99 for x in self.values), "Invalid values for BigCounter"
+        assert len(self.values) == 4, "Invalid values length for BigCounter"
+        if not all(-99 <= x <= 99 for x in self.values):
+            raise InvalidSolutionError(
+                "Big counter increment values must be between -99 and +99"
+            )
 
     def debug_str(self) -> str:
         return f"count={self.count}"
 
     def update(self, stage: int, state: State) -> list[MoveEntity]:
-        if stage != 1:
-            return []
-        for signal, increment in zip(self._get_signals(slice(2, None)), self.values):
-            if signal:
-                self.count = max(-99, min(self.count + increment, 99))
-        self._set_signal("ZERO", self.count == 0, state)
-        self._set_signal("POS", self.count > 0, state)
+        if stage == 1:
+            for signal, increment in zip(self._get_signals(), self.values):
+                if signal:
+                    self.count = max(-99, min(self.count + increment, 99))
+        elif stage == 2:
+            self._set_signal("ZERO", self.count == 0, state)
+            self._set_signal("POS", self.count > 0, state)
         return []
 
 
@@ -1225,7 +1278,7 @@ class Sequencer(Module):
         if self.current_row == -1 and self._get_signal("START"):
             self.current_row = 0
         if 0 <= self.current_row < 12:
-            self._set_signals(slice(2, None), self.rows[self.current_row], state)
+            self._set_signals(self.rows[self.current_row], state)
             self.current_row += 1
         if self.current_row == 12:
             self.current_row = -1
