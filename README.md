@@ -9,9 +9,9 @@ To validate all solved solutions in a directory, use
 python -m foodcourt_sim validate_all [--json] <solution_directory>
 ```
 
-To validate a single, already-solved solution, use
+To simulate a single solution, use
 ```
-python -m foodcourt_sim validate [--json] <solution_file_path>
+python -m foodcourt_sim simulate [--json] <solution_file_path>
 ```
 
 Solution files are usually located under:

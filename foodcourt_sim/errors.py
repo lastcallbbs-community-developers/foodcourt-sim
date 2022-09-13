@@ -56,7 +56,7 @@ class EmergencyStop(SimulationError):
     """Raised when the simulation stops due to a error in the solution."""
 
     def __init__(self, message: str, position: Position, *extra_positions: Position):
-        super().__init__(message, position, *extra_positions)
+        super().__init__(f"Emergency stop: {message}", position, *extra_positions)
 
 
 class TooManyActiveInputs(EmergencyStop):

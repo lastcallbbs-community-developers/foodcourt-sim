@@ -587,8 +587,8 @@ class Output(Module):
             return []
         expected = state.level.order_products[state.order_index]
         if target != expected:
-            print("expected:", expected)
-            print("got:     ", target)
+            # print("expected:", expected)
+            # print("got:     ", target)
             raise self.emergency_stop("This product does not match the order.")
         return [MoveEntity(target, self.direction)]
 
