@@ -338,11 +338,12 @@ def move_entities(
 
     by_dest: dict[Position, list[MoveEntity]] = defaultdict(list)
 
-    for move in all_moves.copy():
+    to_discard: list[MoveEntity] = []
+    for move in all_moves:
         if move.source == output_pos and move.direction is Direction.DOWN:
             ret = True
             state.remove_entity(move.entity)
-            all_moves.remove(move)
+            to_discard.append(move)
             continue
         if not (0 <= move.dest.row < 7 and 0 <= move.dest.column < 6):
             raise EmergencyStop(
@@ -350,6 +351,8 @@ def move_entities(
             )
         # group moves by destination
         by_dest[move.dest].append(move)
+    for move in to_discard:
+        all_moves.remove(move)
 
     order = order_moves(all_moves)
     # check_order(order, all_moves)
