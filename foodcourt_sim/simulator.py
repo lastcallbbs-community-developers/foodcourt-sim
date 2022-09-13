@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
-
-import networkx as nx
 
 from .enums import JackDirection
 from .errors import (
@@ -152,32 +150,89 @@ def order_moves(all_moves: list[MoveEntity]) -> list[set[Position]]:
     """
     Return a list of groups of destination positions in the order their movements
     should be evaluated.
+
+    Uses a custom implementation of Tarjan's SCC algorithm, using Nuutila's
+    modification. This produces the components in topological order.
     """
 
-    """General approach:
-    1. Construct DAGs from groups of potentially conflicting movements, where `dest` of
-       one or more MoveEntity is `position` of another MoveEntity.
-    2. Get the topological ordering of the DAGs.
-    """
-
-    graph = nx.DiGraph()
     dests = set()
+    vertices: set[Position] = set()
+    edges: dict[Position, list[Position]] = defaultdict(list)
+
     for move in all_moves:
         dests.add(move.dest)
-        graph.add_edge(move.dest, move.source)
+        vertices.add(move.source)
+        vertices.add(move.dest)
+        edges[move.source].append(move.dest)
 
-    try:
-        return [{pos} for pos in nx.topological_sort(graph) if pos in dests]
-    except nx.NetworkXUnfeasible:
-        # graph has loops
-        # condense any loops to a single node
-        cond = nx.condensation(graph)
+    # Nuutila's improved algorithm 1; pseudocode from Nuutila & Soisalon-Soininen 1994
+    next_index = 0
+    S: deque[Position] = deque()
 
-        # get the topological order of the condensed graph
-        return [
-            {pos for pos in cond.nodes[n]["members"] if pos in dests}
-            for n in nx.topological_sort(cond)
-        ]
+    index: dict[Position, int] = {}
+    root: dict[Position, Position] = {}
+    in_component: dict[Position, bool] = {}
+
+    components: list[set[Position]] = []
+
+    def visit(v: Position) -> None:
+        nonlocal next_index
+        # keep track of when we entered visit with this node
+        index[v] = next_index
+        next_index += 1
+
+        root[v] = v
+        in_component[v] = False
+
+        if v in edges:
+            for w in edges[v]:
+                if w not in index:
+                    visit(w)
+                if not in_component[w]:
+                    root[v] = min(root[v], root[w], key=index.__getitem__)
+
+        if root[v] == v:
+            in_component[v] = True
+            scc = set()
+            if v in dests:
+                scc.add(v)
+            while S and index[S[-1]] > index[v]:
+                w = S.pop()
+                in_component[w] = True
+                if w in dests:
+                    scc.add(w)
+            components.append(scc)
+        else:
+            S.append(v)
+
+    for v in dests:
+        if v not in index:
+            visit(v)
+
+    return components
+
+
+def check_order(dest_order: list[set[Position]], all_moves: list[MoveEntity]) -> None:
+    """Check that a move order is correct."""
+
+    if not dest_order:
+        return
+
+    prev_dests: set[Position] = set()
+    for dests in dest_order:
+        prev_dests.update(dests)
+        for dest in dests:
+            # there can't be any moves that come after the current group whose source is dest
+            for i, m in enumerate(all_moves):
+                if m.dest in prev_dests:
+                    continue
+                assert (
+                    m.source != dest
+                ), f"check_order failed, {dests=}, move {i}: {m.source} -> {m.dest}"
+
+    assert prev_dests == {
+        m.dest for m in all_moves
+    }, "check_order failed: missing some dests"
 
 
 def resolve_movement(
@@ -283,10 +338,11 @@ def move_entities(
 
     by_dest: dict[Position, list[MoveEntity]] = defaultdict(list)
 
-    for move in all_moves:
+    for move in all_moves.copy():
         if move.source == output_pos and move.direction is Direction.DOWN:
             ret = True
             state.remove_entity(move.entity)
+            all_moves.remove(move)
             continue
         if not (0 <= move.dest.row < 7 and 0 <= move.dest.column < 6):
             raise EmergencyStop(
@@ -295,7 +351,8 @@ def move_entities(
         # group moves by destination
         by_dest[move.dest].append(move)
 
-    order = order_moves([m for m in all_moves if m.dest in by_dest])
+    order = order_moves(all_moves)
+    # check_order(order, all_moves)
     for dests in order:
         if not dests:
             continue
