@@ -89,7 +89,7 @@ def test_loops() -> None:
 
     with pytest.raises(EmergencyStop) as excinfo:
         ticks = simulate_order(solution, 0, time_limit=12, debug=True)
-    assert excinfo.value.message == "This product cannot be sliced."
+    assert excinfo.value.message == "Emergency stop: This product cannot be sliced."
     assert Position(3, 3) in excinfo.value.positions
 
 
