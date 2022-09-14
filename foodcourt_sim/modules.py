@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import InitVar, dataclass, field
-from typing import TYPE_CHECKING, NamedTuple, Optional, Sequence, Type, Union
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Sequence, Type, Union
 
 from . import logger
 from .entities import (
@@ -213,6 +213,10 @@ class Module:
             seen = set()
         for i, value in zip(output_jack_indices, values):
             self._set_signal(i, value, state, seen)
+
+    def dump_state(self) -> tuple[Any, ...]:
+        """Get the internal state of this module for use in cycle detection."""
+        return ()
 
     def debug_str(self) -> str:
         return ""
@@ -609,6 +613,9 @@ class Router(Module):
         super().__post_init__(level)
         self.current_direction = self.direction
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.current_direction,)
+
     def debug_str(self) -> str:
         return self.current_direction.name
 
@@ -751,6 +758,34 @@ class Stacker(Module):
         return None
 
 
+# maximum number of cook operations before an entity is burnt (over all levels)
+_MAX_COOK_TIMES = {
+    EntityId.POCKET: 4,  # hot pocket
+    EntityId.DOUGH: 2,  # mumbai chaat, rosie's doughnuts
+    EntityId.CHICKEN: 8,  # on the fried side
+    EntityId.CHICKEN_HALF: 8,  # on the fried side
+    EntityId.CHICKEN_CUTLET: 4,  # on the fried side (2 for da wings)
+    EntityId.CHICKEN_LEG: 4,  # on the fried side (2 for da wings)
+    EntityId.MEAT: 4,  # meat+3, breakside grill, belly's
+    EntityId.PIZZA: 4,  # the commissary
+    EntityId.BURGER: 4,  # the commissary
+    EntityId.TENDER: 4,  # the commissary
+    EntityId.CORNDOG: 4,  # the commissary
+    EntityId.CURLY: 4,  # the commissary
+    EntityId.CRINKLE: 4,  # the commissary
+    EntityId.TOT: 4,  # the commissary
+    EntityId.EGG: 4,  # mildred's nook
+    EntityId.BACON: 4,  # mildred's nook
+    EntityId.BANGER: 4,  # mildred's nook
+    EntityId.TOMATO: 2,  # mildred's nook
+    EntityId.FUNGUS: 2,  # mildred's nook
+    EntityId.BLACK: 2,  # mildred's nook
+    EntityId.BREAD: 1,  # mildred's nook
+    EntityId.POTATO: 4,  # belly's
+    EntityId.ONION: 4,  # belly's
+}
+
+
 class Cooker(EjectingModule):
     _MODULE_IDS = [ModuleId.GRILL, ModuleId.FRYER, ModuleId.MICROWAVE]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
@@ -772,7 +807,9 @@ class Cooker(EjectingModule):
                     ModuleId.MICROWAVE: OperationId.COOK_MICROWAVE,
                 }[self.id]
             )
-            target.operations.append(op)
+            # don't cook things more after they're burnt
+            if target.operations.count(op) <= _MAX_COOK_TIMES[target.id]:
+                target.operations.append(op)
         return []
 
     def update_signals(self, state: State) -> None:
@@ -792,6 +829,9 @@ class WasteBin(SimpleMachine):
     is_full: bool = False
 
     __hash__ = Module.__hash__
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.is_full,)
 
     def debug_str(self) -> str:
         return "full" if self.is_full else "empty"
@@ -1056,6 +1096,9 @@ class Espresso(EjectingModule):
         ):
             raise InvalidSolutionError("Espresso machine can only face right or left")
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.grind_count,)
+
     def debug_str(self) -> str:
         return f"grind_count={self.grind_count}"
 
@@ -1165,6 +1208,9 @@ class SmallCounter(Module):
                 "Small counter increment values must be between -9 and +9"
             )
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.count,)
+
     def debug_str(self) -> str:
         return f"count={self.count}"
 
@@ -1202,6 +1248,9 @@ class BigCounter(Module):
                 "Big counter increment values must be between -99 and +99"
             )
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.count,)
+
     def debug_str(self) -> str:
         return f"count={self.count}"
 
@@ -1237,6 +1286,9 @@ class Sequencer(Module):
         super().check()
         assert len(self.rows) == 12, "Invalid rows for Sequencer"
         assert all(len(r) == 4 for r in self.rows), "Invalid rows for Sequencer"
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.current_row,)
 
     def debug_str(self) -> str:
         return f"row={self.current_row}"

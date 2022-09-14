@@ -73,8 +73,9 @@ def test_movement(solution_name: str) -> None:
     with open(solutions_dir / "yut23" / solution_name, "rb") as f:
         solution = read_solution(f)
 
-    with pytest.raises(TimeLimitExceeded):
+    with pytest.raises(TimeLimitExceeded) as excinfo:
         simulate_order(solution, 0, time_limit=20, debug=True)
+    assert excinfo.value.time < 20
 
 
 def test_loops() -> None:

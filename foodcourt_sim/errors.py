@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .models import Position
@@ -49,8 +49,16 @@ class InternalSimulationError(SimulationError):
 class TimeLimitExceeded(SimulationError):
     """Raised when the solution doesn't finish within the specified time limit."""
 
-    def __init__(self) -> None:
-        super().__init__("Time limit exceeded.")
+    def __init__(self, loop: Optional[tuple[int, int]] = None) -> None:
+        loop_desc = ""
+        if loop:
+            start, end = loop
+            if start + 1 == end:
+                loop_desc = " (deadlock detected)"
+            else:
+                loop_desc = f" (loop detected from {start})"
+        self.loop = loop
+        super().__init__(f"Time limit exceeded{loop_desc}.")
 
 
 class EmergencyStop(SimulationError):

@@ -107,6 +107,15 @@ class Entity:
             return NotImplemented
         return self._compare_key() < other._compare_key()
 
+    def dump_state(self) -> tuple[Any, ...]:
+        """Get the state of this entity as a hashable object for cycle detection."""
+        op_state = tuple(dataclasses.astuple(op) for op in self.operations)
+        if self.stack:
+            stack_state = self.stack.dump_state()
+        else:
+            stack_state = ()
+        return (tuple(self.position), op_state, stack_state)
+
     def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
         # default behavior:
         if self.stack is None:
@@ -131,6 +140,12 @@ class MultiStackEntity(Entity):
 
     def get_capacity(self) -> int:
         return self.capacity
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (
+            *super().dump_state(),
+            tuple(stack.dump_state() for stack in self.multistack),
+        )
 
     def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
         if self.get_capacity() and len(self.multistack) == self.get_capacity():
@@ -164,6 +179,9 @@ class ChaatDough(Entity):
     def _compare_key(self) -> tuple[Any, ...]:
         return (*super()._compare_key(), self.sauces)
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (*super().dump_state(), frozenset(self.sauces))
+
     def add_sauce(self, sauce: ToppingId, error: Exception) -> None:
         assert sauce in {
             ToppingId.TOMATO,
@@ -191,6 +209,9 @@ class Cup(Entity):
         # use +contents to discard negative and zero counts
         return (*super()._compare_key(), +self.contents)
 
+    def dump_state(self) -> tuple[Any, ...]:
+        return (*super().dump_state(), tuple(sorted(self.contents.items())))
+
     def add_fluid(self, fluid: ToppingId, error: Exception) -> None:
         if sum(self.contents.values()) >= self.capacity:
             raise error
@@ -213,6 +234,9 @@ class PaintableCup(Cup):
 
     def _compare_key(self) -> tuple[Any, ...]:
         return (*super()._compare_key(), self.colors)
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (*super().dump_state(), tuple(self.colors))
 
 
 @dataclass(eq=False, repr=False)
@@ -259,6 +283,13 @@ class PizzaDough(Entity):
         return (
             *super()._compare_key(),
             *sorted([sorted(self.left_toppings), sorted(self.right_toppings)]),
+        )
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (
+            *super().dump_state(),
+            frozenset(self.left_toppings),
+            frozenset(self.right_toppings),
         )
 
 

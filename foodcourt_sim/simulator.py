@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from . import logger
 from .enums import JackDirection
@@ -93,6 +93,25 @@ class State:
     @property
     def order_signals(self) -> tuple[bool, ...]:
         return self.level.order_signals[self.order_index]
+
+    def dump(self) -> tuple[Any, ...]:
+        """Return a hashable object representing the current simulation state.
+        Used for detecting deadlocks and cycles.
+        """
+        module_states = []
+        for module in self.modules:
+            module_state = module.dump_state()
+            if module_state:
+                module_states.append(module_state)
+        entity_states: dict[int, tuple[Any, ...]] = {}
+        for entities in self.entities.values():
+            for entity in entities:
+                entity_states[id(entity)] = entity.dump_state()
+        return (
+            tuple(module_states),
+            tuple(sorted(entity_states.items())),
+            self.successful_output,
+        )
 
     def get_module(self, pos: Position) -> Optional[Module]:
         return self._modules_by_pos.get(pos, None)
@@ -441,6 +460,7 @@ def simulate_order(
     with LoggingContext(logger, **kwargs):  # type: ignore
         logger.debug("%s", solution)
         state = State.from_solution(solution, order_index)
+        seen_states: dict[tuple[Any, ...], int] = {}
 
         main_input = next(m for m in state.modules if isinstance(m, MainInput))
         output = next(m for m in state.modules if isinstance(m, Output))
@@ -464,6 +484,12 @@ def simulate_order(
                     propagate_signals(state)
                     # pause here in single-step mode
                     state.debug_log()
+                    state_key = state.dump()
+                    if state_key in seen_states:
+                        raise TimeLimitExceeded(
+                            loop=(seen_states[state_key], state.time)
+                        )
+                    seen_states[state_key] = state.time
                     if time_limit != -1 and state.time >= time_limit:
                         raise TimeLimitExceeded()
             except AssertionError as e:
