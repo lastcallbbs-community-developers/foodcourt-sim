@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -446,6 +446,10 @@ before first tick, do last step with main input signals turned on
 """
 
 
+# maximum length of a cycle to detect (keeps memory usage bounded)
+_MAX_CYCLE_LENGTH = 1000
+
+
 def simulate_order(
     solution: Solution,
     order_index: int,
@@ -460,7 +464,7 @@ def simulate_order(
     with LoggingContext(logger, **kwargs):  # type: ignore
         logger.debug("%s", solution)
         state = State.from_solution(solution, order_index)
-        seen_states: dict[tuple[Any, ...], int] = {}
+        seen_states: OrderedDict[tuple[Any, ...], int] = OrderedDict()
 
         main_input = next(m for m in state.modules if isinstance(m, MainInput))
         output = next(m for m in state.modules if isinstance(m, Output))
@@ -490,6 +494,8 @@ def simulate_order(
                             loop=(seen_states[state_key], state.time)
                         )
                     seen_states[state_key] = state.time
+                    if len(seen_states) > _MAX_CYCLE_LENGTH:
+                        seen_states.popitem(last=False)
                     if time_limit != -1 and state.time >= time_limit:
                         raise TimeLimitExceeded()
             except AssertionError as e:
