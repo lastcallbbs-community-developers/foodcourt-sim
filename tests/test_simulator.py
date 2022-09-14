@@ -43,7 +43,7 @@ def test_solved(solution: Solution, order_index: int) -> None:
     error = False
     # run without debugging for speed, and only rerun with debugging if an error occurs
     try:
-        ticks = simulate_order(solution, order_index, time_limit=solution.time)
+        ticks = simulate_order(solution, order_index, time_limit=solution.time).time
     except SimulationError:
         error = True
     if error:
@@ -81,14 +81,14 @@ def test_loops() -> None:
     with open(solutions_dir / "yut23" / "loop-testing-1.solution", "rb") as f:
         solution = read_solution(f)
 
-    ticks = simulate_order(solution, 0, time_limit=22, debug=True)
+    ticks = simulate_order(solution, 0, time_limit=22, debug=True).time
     assert ticks == 22
 
     with open(solutions_dir / "yut23" / "loop-testing-2.solution", "rb") as f:
         solution = read_solution(f)
 
     with pytest.raises(EmergencyStop) as excinfo:
-        ticks = simulate_order(solution, 0, time_limit=12, debug=True)
+        simulate_order(solution, 0, time_limit=12, debug=True)
     assert excinfo.value.message == "Emergency stop: This product cannot be sliced."
     assert Position(3, 3) in excinfo.value.positions
 
@@ -97,7 +97,7 @@ def test_2twelve():
     with open(solutions_dir / "yut23" / "2twelve-1.solution", "rb") as f:
         solution = read_solution(f)
 
-    ticks = simulate_order(solution, 1, time_limit=8, debug=True)
-    assert ticks == 8
-    ticks = simulate_order(solution, 0, time_limit=8, debug=True)
-    assert ticks == 8
+    state = simulate_order(solution, 1, time_limit=8, debug=True)
+    assert state.time == 8
+    state = simulate_order(solution, 0, time_limit=8, debug=True)
+    assert state.time == 8

@@ -42,6 +42,10 @@ class State:
     )
     _modules_by_pos: dict[Position, Module] = field(init=False, repr=False)
 
+    time: int = 0
+    # whether the target product has been sent to the output
+    successful_output: bool = False
+
     def __post_init__(self) -> None:
         self._modules_by_pos = {
             module.floor_position: module for module in self.modules if module.on_floor
@@ -94,15 +98,16 @@ class State:
         assert len(ents) == 1, f"multiple entities at {pos}"
         return ents[0]
 
-    def dump(self, indent: str = "") -> None:
+    def dump(self) -> None:
         """Pretty-print the simulation state for debugging."""
+        print(f"Tick {self.time}:")
         for module in sorted(
             self.modules, key=lambda m: (-m.rack_position.row, m.rack_position.column)
         ):
             if not module.on_rack:
                 continue
             print(
-                f"{indent}{module.id.name} @ {module.rack_position}: {module.debug_str()}"
+                f"  {module.id.name} @ {module.rack_position}: {module.debug_str()}"
             )
             for i, (jack, value) in enumerate(zip(module.jacks, module.signals.values)):
                 if not value:
@@ -110,15 +115,15 @@ class State:
                 if (module, i) not in self.wire_map:
                     continue
                 if jack.direction is JackDirection.OUT:
-                    print(f"{indent}  {jack.name} >")
+                    print(f"    {jack.name} >")
                 else:
-                    print(f"{indent}  > {jack.name}")
+                    print(f"    > {jack.name}")
         for pos, entities in sorted(
             self.entities.items(), key=lambda x: (-x[0].row, x[0].column)
         ):
-            print(f"{indent}{pos}:")
+            print(f"  {pos}:")
             for entity in entities:
-                print(f"{indent}  {entity}")
+                print(f"    {entity}")
 
 
 def handle_moves_to_empty(
@@ -329,19 +334,14 @@ def resolve_loop(
 
 def move_entities(
     state: State, all_moves: list[MoveEntity], output_pos: Position, debug: bool
-) -> bool:
-    """Move entities around and handle collisions.
-
-    Return True if the correct product exits through the output conveyor.
-    """
-    ret = False
-
+) -> None:
+    """Move entities around and handle collisions."""
     by_dest: dict[Position, list[MoveEntity]] = defaultdict(list)
 
     to_discard: list[MoveEntity] = []
     for move in all_moves:
         if move.source == output_pos and move.direction is Direction.DOWN:
-            ret = True
+            state.successful_output = True
             state.remove_entity(move.entity)
             to_discard.append(move)
             continue
@@ -376,8 +376,6 @@ def move_entities(
         if len(state.entities[dest]) > 1:
             raise InternalSimulationError("Unhandled entity collision", dest)
 
-    return ret
-
 
 def propagate_signals(state: State) -> None:
     for module in state.modules:
@@ -407,7 +405,7 @@ def simulate_order(
     order_index: int,
     time_limit: int = -1,
     debug: bool = False,
-) -> int:
+) -> State:
     """Return the number of ticks the order took to complete."""
     if debug:
         print(solution)
@@ -416,41 +414,35 @@ def simulate_order(
     main_input = next(m for m in state.modules if isinstance(m, MainInput))
     output = next(m for m in state.modules if isinstance(m, Output))
 
-    time = 0
-    successful_output = False
     try:
         try:
             main_input.zeroth_tick(state)
             propagate_signals(state)
             if debug:
-                print(f"Tick {time}:")
-                state.dump(indent="  ")
+                state.dump()
             while True:
-                time += 1
+                state.time += 1
                 moves = []
                 for module in state.modules:
                     moves.extend(module.tick(state))
-                successful_output |= move_entities(
-                    state, moves, output.floor_position, debug=debug
-                )
+                move_entities(state, moves, output.floor_position, debug=debug)
                 for module in state.modules:
                     module.update_signals(state)
                 # keep simulating until all entities are removed
-                if successful_output and not state.entities:
-                    return time
+                if state.successful_output and not state.entities:
+                    return state
                 propagate_signals(state)
                 # pause here in single-step mode
                 if debug:
-                    print(f"Tick {time}:")
-                    state.dump(indent="  ")
-                if time_limit != -1 and time >= time_limit:
+                    state.dump()
+                if time_limit != -1 and state.time >= time_limit:
                     raise TimeLimitExceeded()
         except AssertionError as e:
             # reraise assertion errors as InternalSimulationErrors
             raise InternalSimulationError(str(e)) from e
     except SimulationError as e:
         # annotate error with the current time
-        e.time = time
+        e.time = state.time
         if debug:
             if isinstance(e, EmergencyStop):
                 desc = "*** EMERGENCY STOP ***"
@@ -459,7 +451,7 @@ def simulate_order(
             else:
                 desc = "*** SIMULATION ERROR ***"
             print(f"\n{desc}\n{e}")
-            state.dump(indent="  ")
+            state.dump()
         raise
 
     assert False
@@ -481,11 +473,15 @@ def simulate_solution(
     times = []
     for order_index in range(len(solution.level.order_signals)):
         times.append(
-            simulate_order(solution, order_index, time_limit=time_limit, debug=debug)
+            simulate_order(
+                solution, order_index, time_limit=time_limit, debug=debug
+            ).time
         )
     max_time = max(times)
     if solution.solved and solution.time != max_time:
-        raise InvalidSolutionError("evaluated time doesn't match stored time")
+        raise InvalidSolutionError(
+            f"evaluated time ({max_time}) doesn't match stored time ({solution.time})"
+        )
     return Metrics(
         cost=solution.cost,
         max_time=max_time,

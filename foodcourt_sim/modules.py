@@ -324,14 +324,15 @@ class MainInput(Module):
         state.add_entity(tray)
 
     def tick(self, state: State) -> list[MoveEntity]:
-        tray = state.get_entity(self.floor_position)
-        if tray is not None:
+        if state.time == 1:
             # only on first tick
+            tray = state.get_entity(self.floor_position)
+            assert tray is not None
             return [MoveEntity(tray, self.direction)]
         return []
 
     def update_signals(self, state: State) -> None:
-        if self.signals.values[0]:
+        if state.time == 1:
             # only on first tick
             self._set_signals([False] * len(self.jacks), state)
 
