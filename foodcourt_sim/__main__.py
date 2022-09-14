@@ -3,10 +3,12 @@
 import argparse
 import dataclasses
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
+from . import logger
 from .errors import (
     EmergencyStop,
     InternalSimulationError,
@@ -17,6 +19,11 @@ from .errors import (
 from .models import Solution
 from .savefile import read_solution
 from .simulator import Metrics, simulate_solution
+
+# configure logging
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+logger.addHandler(ch)
 
 INTERNAL_ERROR_MESSAGE = """Internal simulation error encountered. Please open an issue at
 https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new
@@ -125,6 +132,8 @@ def main() -> None:
 
     def run_simulate(args: argparse.Namespace) -> int:
         """Returns an exit code."""
+        if args.debug:
+            logger.setLevel(logging.DEBUG)
         solution = read_solution(args.solution_file)
         if solution.solved and args.time_limit == -1:
             args.time_limit = solution.time

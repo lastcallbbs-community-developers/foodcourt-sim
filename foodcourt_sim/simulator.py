@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+from . import logger
 from .enums import JackDirection
 from .errors import (
     EmergencyStop,
@@ -28,6 +30,31 @@ __all__ = [
     "simulate_order",
     "simulate_solution",
 ]
+
+
+class LoggingContext:
+    def __init__(self, logger_, level=None, handler=None, close=True):
+        self.logger = logger_
+        self.level = level
+        self.handler = handler
+        self.close = close
+
+    def __enter__(self):
+        if self.level is not None:
+            # pylint: disable-next=attribute-defined-outside-init
+            self.old_level = self.logger.level
+            self.logger.setLevel(self.level)
+        if self.handler:
+            self.logger.addHandler(self.handler)
+
+    def __exit__(self, et, ev, tb):
+        if self.level is not None:
+            self.logger.setLevel(self.old_level)
+        if self.handler:
+            self.logger.removeHandler(self.handler)
+        if self.handler and self.close:
+            self.handler.close()
+        # implicit return of None => don't swallow exceptions
 
 
 @dataclass
@@ -98,16 +125,21 @@ class State:
         assert len(ents) == 1, f"multiple entities at {pos}"
         return ents[0]
 
-    def dump(self) -> None:
-        """Pretty-print the simulation state for debugging."""
-        print(f"Tick {self.time}:")
+    def debug_log(self) -> None:
+        """Pretty-print the simulation state to the debug logger."""
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug("Tick %d:", self.time)
         for module in sorted(
             self.modules, key=lambda m: (-m.rack_position.row, m.rack_position.column)
         ):
             if not module.on_rack:
                 continue
-            print(
-                f"  {module.id.name} @ {module.rack_position}: {module.debug_str()}"
+            logger.debug(
+                "  %s @ %s: %s",
+                module.id.name,
+                module.rack_position,
+                module.debug_str(),
             )
             for i, (jack, value) in enumerate(zip(module.jacks, module.signals.values)):
                 if not value:
@@ -115,15 +147,15 @@ class State:
                 if (module, i) not in self.wire_map:
                     continue
                 if jack.direction is JackDirection.OUT:
-                    print(f"    {jack.name} >")
+                    logger.debug("    %s >", jack.name)
                 else:
-                    print(f"    > {jack.name}")
+                    logger.debug("    > %s", jack.name)
         for pos, entities in sorted(
             self.entities.items(), key=lambda x: (-x[0].row, x[0].column)
         ):
-            print(f"  {pos}:")
+            logger.debug("  %s:", pos)
             for entity in entities:
-                print(f"    {entity}")
+                logger.debug("    %s", entity)
 
 
 def handle_moves_to_empty(
@@ -244,16 +276,14 @@ def resolve_movement(
     state: State,
     dest: Position,
     moves: list[MoveEntity],
-    debug: bool,
 ) -> None:
     forced = [m for m in moves if m.force]
     optional = [m for m in moves if not m.force]
-    if debug:
-        print(f"Moves to {dest}:")
-        if forced:
-            print(f"  {forced=}")
-        if optional:
-            print(f"  {optional=}")
+    logger.debug("Moves to %s:", dest)
+    if forced:
+        logger.debug("  forced=%s", forced)
+    if optional:
+        logger.debug("  optional=%s", optional)
     # check for forced collisions
     if len(forced) > 1:
         raise EmergencyStop(
@@ -267,8 +297,8 @@ def resolve_movement(
             accepted = handle_moves_to_empty(dest, state, move_group)
         else:
             accepted = module.handle_moves(state, move_group)
-        if debug and (len(forced) + len(optional) > 1 or accepted is None):
-            print(f"    accepted: {accepted}")
+        if len(forced) + len(optional) > 1 or accepted is None:
+            logger.debug("    accepted: %s", accepted)
         if accepted is not None:
             state.move_entity(accepted.entity, accepted.direction)
             # don't need to try next move group
@@ -280,25 +310,22 @@ def resolve_loop(
     dests: set[Position],
     by_dest: dict[Position, list[MoveEntity]],
     loop_moves: list[MoveEntity],
-    debug: bool,
 ) -> None:
     assert len(set(m.dest for m in loop_moves)) == len(dests)
     accepted_moves = []
     # For each position, see if the move that would be accepted will
     # keep the entity in the loop. If true for all positions, then all
     # moves will be performed, else none will.
-    do_loop = True
-    if debug:
-        print(f"\n*** Loop detected at {dests} ***")
+    do_moves = True
+    logger.debug("*** Loop detected at %s ***", dests)
     for dest in dests:
         forced = [m for m in by_dest[dest] if m.force]
         optional = [m for m in by_dest[dest] if not m.force]
-        if debug:
-            print(f"Moves to {dest}:")
-            if forced:
-                print(f"  {forced=}")
-            if optional:
-                print(f"  {optional=}")
+        logger.debug("Moves to %s:", dest)
+        if forced:
+            logger.debug("  forced=%s", forced)
+        if optional:
+            logger.debug("  optional=%s", optional)
         # check for forced collisions
         if len(forced) > 1:
             raise EmergencyStop(
@@ -312,16 +339,16 @@ def resolve_loop(
             accepted = module.handle_moves(
                 state, move_group, ignore_collisions=True, dry_run=True
             )
-            if debug and (len(forced) + len(optional) > 1 or accepted is None):
-                print(f"    accepted: {accepted}")
+            if len(forced) + len(optional) > 1 or accepted is None:
+                logger.debug("    accepted: %s", accepted)
             if accepted not in loop_moves:
-                do_loop = False
+                do_moves = False
                 break
             accepted_moves.append(accepted)
             if accepted is not None:
                 # don't need to try next move group
                 break
-    if do_loop:
+    if do_moves:
         assert sorted(accepted_moves) == sorted(
             loop_moves
         ), "accepted_moves doesn't match loop_moves"
@@ -333,7 +360,7 @@ def resolve_loop(
 
 
 def move_entities(
-    state: State, all_moves: list[MoveEntity], output_pos: Position, debug: bool
+    state: State, all_moves: list[MoveEntity], output_pos: Position
 ) -> None:
     """Move entities around and handle collisions."""
     by_dest: dict[Position, list[MoveEntity]] = defaultdict(list)
@@ -362,11 +389,11 @@ def move_entities(
         if len(dests) == 1:
             # single destination, not a loop
             dest = next(iter(dests))
-            resolve_movement(state, dest, by_dest[dest], debug)
+            resolve_movement(state, dest, by_dest[dest])
         else:
             # entity movements make a closed loop
             loop_moves = [m for m in all_moves if m.dest in dests and m.source in dests]
-            resolve_loop(state, dests, by_dest, loop_moves, debug)
+            resolve_loop(state, dests, by_dest, loop_moves)
 
     # check for collisions
     for dest in by_dest:
@@ -407,52 +434,55 @@ def simulate_order(
     debug: bool = False,
 ) -> State:
     """Return the number of ticks the order took to complete."""
-    if debug:
-        print(solution)
-    state = State.from_solution(solution, order_index)
+    kwargs = {}
+    if not logger.isEnabledFor(logging.DEBUG) and debug:
+        # set logging level to DEBUG if it's not already enabled
+        kwargs["level"] = logging.DEBUG
+    with LoggingContext(logger, **kwargs):  # type: ignore
+        logger.debug("%s", solution)
+        state = State.from_solution(solution, order_index)
 
-    main_input = next(m for m in state.modules if isinstance(m, MainInput))
-    output = next(m for m in state.modules if isinstance(m, Output))
+        main_input = next(m for m in state.modules if isinstance(m, MainInput))
+        output = next(m for m in state.modules if isinstance(m, Output))
 
-    try:
         try:
-            main_input.zeroth_tick(state)
-            propagate_signals(state)
-            if debug:
-                state.dump()
-            while True:
-                state.time += 1
-                moves = []
-                for module in state.modules:
-                    moves.extend(module.tick(state))
-                move_entities(state, moves, output.floor_position, debug=debug)
-                for module in state.modules:
-                    module.update_signals(state)
-                # keep simulating until all entities are removed
-                if state.successful_output and not state.entities:
-                    return state
+            try:
+                main_input.zeroth_tick(state)
                 propagate_signals(state)
-                # pause here in single-step mode
-                if debug:
-                    state.dump()
-                if time_limit != -1 and state.time >= time_limit:
-                    raise TimeLimitExceeded()
-        except AssertionError as e:
-            # reraise assertion errors as InternalSimulationErrors
-            raise InternalSimulationError(str(e)) from e
-    except SimulationError as e:
-        # annotate error with the current time
-        e.time = state.time
-        if debug:
+                state.debug_log()
+                while True:
+                    state.time += 1
+                    moves = []
+                    for module in state.modules:
+                        moves.extend(module.tick(state))
+                    move_entities(state, moves, output.floor_position)
+                    for module in state.modules:
+                        module.update_signals(state)
+                    # keep simulating until all entities are removed
+                    if state.successful_output and not state.entities:
+                        return state
+                    propagate_signals(state)
+                    # pause here in single-step mode
+                    state.debug_log()
+                    if time_limit != -1 and state.time >= time_limit:
+                        raise TimeLimitExceeded()
+            except AssertionError as e:
+                # reraise assertion errors as InternalSimulationErrors
+                raise InternalSimulationError(str(e)) from e
+        except SimulationError as e:
+            # annotate error with the current time
+            e.time = state.time
             if isinstance(e, EmergencyStop):
                 desc = "*** EMERGENCY STOP ***"
             elif isinstance(e, InternalSimulationError):
                 desc = "*** INTERNAL SIMULATION ERROR ***"
             else:
                 desc = "*** SIMULATION ERROR ***"
-            print(f"\n{desc}\n{e}")
-            state.dump()
-        raise
+            logger.debug(desc)
+            if not isinstance(e, TimeLimitExceeded):
+                state.debug_log()
+                logger.debug("", exc_info=e)
+            raise
 
     assert False
 

@@ -4,6 +4,7 @@ import dataclasses
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, NamedTuple, Optional, Sequence, Type, Union
 
+from . import logger
 from .entities import (
     Burger,
     ChaatDough,
@@ -588,8 +589,8 @@ class Output(Module):
             return []
         expected = state.level.order_products[state.order_index]
         if target != expected:
-            # print("expected:", expected)
-            # print("got:     ", target)
+            logger.debug("expected: %s", expected)
+            logger.debug("got:      %s", target)
             raise self.emergency_stop("This product does not match the order.")
         return [MoveEntity(target, self.direction)]
 
