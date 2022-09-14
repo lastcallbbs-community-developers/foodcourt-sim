@@ -5,8 +5,9 @@ import dataclasses
 import json
 import logging
 import sys
+from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from . import logger
 from .errors import (
@@ -16,42 +17,63 @@ from .errors import (
     SimulationError,
     TimeLimitExceeded,
 )
+from .levels import LEVELS
 from .models import Solution
 from .savefile import read_solution
 from .simulator import Metrics, simulate_solution
+
+REPORT_MESSAGE = "Please open an issue at https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new or contact yut23#9382 on the Zachtronics discord."
+
+EXIT_CODES = {
+    EmergencyStop: 1,
+    TimeLimitExceeded: 2,
+    InvalidSolutionError: 3,
+    InternalSimulationError: 127,
+}
 
 # configure logging
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 logger.addHandler(ch)
 
-INTERNAL_ERROR_MESSAGE = """Internal simulation error encountered. Please open an issue at
-https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new
-or contact yut23#9382 on the Zachtronics discord.
-Extra details: {}
-"""
+
+def get_exit_code(ex: Exception) -> int:
+    for error_class, code in EXIT_CODES.items():
+        if isinstance(ex, error_class):
+            return code
+    return 255
 
 
-def to_json(solution: Solution, **kwargs: Any) -> dict[str, Any]:
-    return dict(
-        level_number=solution.level.number,
-        level_name=solution.level.name,
-        level_slug=solution.level.internal_name,
-        solution_name=solution.name,
-        **kwargs,
-    )
+def to_json(solution: Optional[Solution], **kwargs: Any) -> dict[str, Any]:
+    result = {}
+    if solution is not None:
+        result.update(
+            dict(
+                level_number=solution.level.number,
+                level_name=solution.level.name,
+                level_slug=solution.level.internal_name,
+                solution_name=solution.name,
+                filename=solution.filename,
+                marked_solved=solution.solved,
+            )
+        )
+    result.update(**kwargs)
+    return result
 
 
 def metrics_to_json(solution: Solution, metrics: Metrics) -> dict[str, Any]:
     return to_json(solution, is_correct=True, **dataclasses.asdict(metrics))
 
 
-def error_to_json(solution: Solution, ex: Exception) -> dict[str, Any]:
+def error_to_json(
+    solution: Optional[Solution], ex: Exception, **kwargs: Any
+) -> dict[str, Any]:
     return to_json(
         solution,
         is_correct=False,
         error_type=type(ex).__name__,
         error_message=str(ex),
+        **kwargs,
     )
 
 
@@ -76,33 +98,56 @@ def main() -> None:
 
     def run_validate_all(args: argparse.Namespace) -> int:
         """Returns an exit code."""
-        json_result = []
-        solutions = []
+        solutions = defaultdict(list)
+        name_width = 0
         for path in args.solution_dir.glob("*.solution"):
             with path.open("rb") as f:
-                solution = read_solution(f)
+                try:
+                    solution = read_solution(f, filename=path.name)
+                except InvalidSolutionError:
+                    continue
             if not solution.solved:
                 continue
-            solutions.append(((solution.level.number, path.name), solution))
-        solutions.sort()
-        for (_, filename), solution in solutions:
-            try:
-                solution.check()
-                metrics = simulate_solution(solution)
-            except (InvalidSolutionError, EmergencyStop, TimeLimitExceeded) as ex:
-                json_result.append(error_to_json(solution, ex))
+            solutions[solution.level.id].append(solution)
+            name_width = max(name_width, len(solution.name))
+        json_results = []
+        exit_code = 0
+        for level in LEVELS:
+            if not solutions[level.id]:
                 continue
-            except InternalSimulationError as ex:
-                sys.stderr.write(
-                    INTERNAL_ERROR_MESSAGE.format(f"file={filename}; {ex}")
-                )
-                return 127
-            json_result.append(metrics_to_json(solution, metrics))
             if not args.json:
-                print(f'{solution.level.name} ("{solution.name}"): {metrics}')
+                print(level.name)
+            name_width = max(len(solution.name) for solution in solutions[level.id])
+            for solution in sorted(solutions[level.id], key=lambda s: s.filename or ""):
+                try:
+                    solution.check()
+                    metrics = simulate_solution(solution)
+                except InvalidSolutionError as ex:
+                    json_results.append(error_to_json(solution, ex))
+                except SimulationError as ex:
+                    json_results.append(error_to_json(solution, ex))
+                    exit_code = get_exit_code(ex)
+                else:
+                    json_results.append(metrics_to_json(solution, metrics))
+                if not args.json:
+                    print(f"  {solution.name+':':{name_width+1}s} ", end="")
+                    if json_results[-1]["is_correct"]:
+                        print(metrics)
+                    else:
+                        print(f"Error: {json_results[-1]['error_message']}")
         if args.json:
-            print(json.dumps(json_result))
-        return 0
+            print(json.dumps(json_results))
+        bad_results = [result for result in json_results if not result["is_correct"]]
+        if not bad_results:
+            return exit_code
+        logger.error(
+            "Unexpected simulation error%s occurred for:",
+            "" if len(bad_results) == 1 else "s",
+        )
+        for result in bad_results:
+            logger.error("  %s: %s", result["filename"], result["error_message"])
+        sys.stderr.write(REPORT_MESSAGE + "\n")
+        return exit_code
 
     parser_validate_all.set_defaults(func=run_validate_all)
 
@@ -111,8 +156,8 @@ def main() -> None:
     )
     parser_simulate.add_argument(
         "solution_file",
-        type=argparse.FileType("rb"),
-        help="Solution file path (or - for stdin)",
+        type=Path,
+        help="Solution file path",
     )
     parser_simulate.add_argument(
         "--time-limit",
@@ -134,38 +179,47 @@ def main() -> None:
         """Returns an exit code."""
         if args.debug:
             logger.setLevel(logging.DEBUG)
-        solution = read_solution(args.solution_file)
+        with args.solution_file.open("rb") as f:
+            try:
+                solution = read_solution(f, args.solution_file.name)
+            except InvalidSolutionError as ex:
+                if args.json:
+                    print(
+                        json.dumps(
+                            [error_to_json(None, ex, filename=args.solution_file.name)]
+                        )
+                    )
+                else:
+                    print(f"Invalid solution file: {ex}")
+                return get_exit_code(ex)
         if solution.solved and args.time_limit == -1:
             args.time_limit = solution.time
         exit_code = 0
-        metrics = None
         if not args.json:
             print(f'{solution.level.name} ("{solution.name}")')
         try:
             solution.check()
-            metrics = simulate_solution(
-                solution, time_limit=args.time_limit, debug=args.debug
-            )
+            metrics = simulate_solution(solution, time_limit=args.time_limit)
         except (SimulationError, InvalidSolutionError) as ex:
             result = error_to_json(solution, ex)
-            if isinstance(ex, EmergencyStop):
-                exit_code = 1
-            elif isinstance(ex, TimeLimitExceeded):
-                exit_code = 2
-            elif isinstance(ex, InvalidSolutionError):
-                exit_code = 3
-            elif isinstance(ex, InternalSimulationError):
-                exit_code = 127
-                sys.stderr.write(INTERNAL_ERROR_MESSAGE.format(str(ex)))
+            exit_code = get_exit_code(ex)
+            if isinstance(ex, InternalSimulationError):
+                sys.stderr.write(f"Internal simulation error encountered: {ex}\n")
+                sys.stderr.write(REPORT_MESSAGE + "\n")
             if not args.json:
                 print(f"Simulation failed:\n{ex}")
         else:
             result = metrics_to_json(solution, metrics)
         if args.json:
             print(json.dumps([result]))
-        elif metrics is not None:
+        elif result["is_correct"]:
             for field in dataclasses.fields(metrics):
                 print(field.name, "=", getattr(metrics, field.name))
+            if not solution.solved:
+                print(
+                    "Note: this solution was not marked as solved in-game. If it doesn't actually work,"
+                )
+                print(REPORT_MESSAGE)
         return exit_code
 
     parser_simulate.set_defaults(func=run_simulate)

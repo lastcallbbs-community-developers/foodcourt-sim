@@ -28,12 +28,13 @@ class SimulationError(Exception):
         self.message = message
         self.positions = positions
         self.time = -1
+        self.order = -1
         super().__init__(message)
 
     def __str__(self) -> str:
         parts = []
         if self.time >= 0:
-            parts.append(f"Tick {self.time}")
+            parts.append(f"Order {self.order + 1}, tick {self.time}")
         if self.positions:
             parts.append(", ".join(map(str, self.positions)))
         if parts:

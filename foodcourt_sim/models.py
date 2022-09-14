@@ -4,7 +4,7 @@ import functools
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, unique
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
 from .enums import LevelId, ModuleId
 from .errors import InvalidSolutionError
@@ -93,8 +93,9 @@ class Solution:  # pylint: disable=too-many-instance-attributes
     solved: bool
     time: int
     cost: int
-    modules: list[Module] = field(repr=False)
-    wires: list[Wire] = field(repr=False)
+    modules: list[Module]
+    wires: list[Wire]
+    filename: Optional[str] = field(compare=False)
 
     def __repr__(self) -> str:
         lines = []

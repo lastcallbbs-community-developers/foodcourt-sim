@@ -472,6 +472,7 @@ def simulate_order(
         except SimulationError as e:
             # annotate error with the current time
             e.time = state.time
+            e.order = state.order_index
             if isinstance(e, EmergencyStop):
                 desc = "*** EMERGENCY STOP ***"
             elif isinstance(e, InternalSimulationError):

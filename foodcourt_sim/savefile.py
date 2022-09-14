@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import io
 import struct
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 from .enums import LevelId, ModuleId, MusicMode, PaintColor, PaintMask
 from .errors import InvalidSolutionError
@@ -134,7 +134,9 @@ def write_wire(stream: io.BufferedIOBase, wire: Wire) -> None:
     write_int(stream, wire.jack_2, 4)
 
 
-def read_solution(data: Union[bytes, io.BufferedIOBase]) -> Solution:
+def read_solution(
+    data: Union[bytes, io.BufferedIOBase], filename: Optional[str] = None
+) -> Solution:
     if isinstance(data, io.BufferedIOBase):
         stream = data
     else:
@@ -159,7 +161,9 @@ def read_solution(data: Union[bytes, io.BufferedIOBase]) -> Solution:
     num_wires = read_int(stream, 4)
     wires = [read_wire(stream) for _ in range(num_wires)]
 
-    solution = Solution(version, level_id, name, solved, time, cost, modules, wires)
+    solution = Solution(
+        version, level_id, name, solved, time, cost, modules, wires, filename
+    )
     return solution
 
 
