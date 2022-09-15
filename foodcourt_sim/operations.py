@@ -46,6 +46,9 @@ class Operation:
             return NotImplemented
         return self._compare_key() < other._compare_key()
 
+    def dump(self) -> tuple[Any, ...]:
+        return (self.id,)
+
 
 def CookFryer() -> Operation:
     return Operation(OperationId.COOK_FRYER)
@@ -71,6 +74,9 @@ def Flatten() -> Operation:
 class Dispense(Operation):
     topping: ToppingId
 
+    def dump(self) -> tuple[Any, ...]:
+        return (self.id, self.topping)
+
 
 def DispenseFluid(topping: ToppingId) -> Operation:
     return Dispense(OperationId.DISPENSE_FLUID, topping)
@@ -83,6 +89,9 @@ class _DispenseFluidMixed(Dispense):
     def __post_init__(self):
         assert self.topping != self.topping_2, "duplicate mixed fluid"
         assert self.topping < self.topping_2, "mixed fluids are out of order"
+
+    def dump(self) -> tuple[Any, ...]:
+        return (self.id, self.topping, self.topping_2)
 
 
 def DispenseFluidMixed(topping_1: ToppingId, topping_2: ToppingId) -> Operation:

@@ -210,6 +210,8 @@ def order_moves(all_moves: list[MoveEntity]) -> list[set[Position]]:
     Uses a custom implementation of Tarjan's SCC algorithm, using Nuutila's
     modification. This produces the components in topological order.
     """
+    if len(all_moves) == 1:
+        return [{all_moves[0].dest}]
 
     dests = set()
     vertices: set[Position] = set()
@@ -425,7 +427,7 @@ def move_entities(
 
 def propagate_signals(state: State) -> None:
     for module in state.modules:
-        if not module.on_rack:
+        if not module.jacks:
             continue
         # commit pending signal values
         module.signals.update()

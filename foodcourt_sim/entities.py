@@ -109,7 +109,7 @@ class Entity:
 
     def dump_state(self) -> tuple[Any, ...]:
         """Get the state of this entity as a hashable object for cycle detection."""
-        op_state = tuple(dataclasses.astuple(op) for op in self.operations)
+        op_state = tuple(op.dump() for op in self.operations)
         if self.stack:
             stack_state = self.stack.dump_state()
         else:

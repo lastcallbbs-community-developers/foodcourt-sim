@@ -77,7 +77,7 @@ class Signals:
 
     def update(self) -> None:
         """Advance to the next tick and clear all pending signals."""
-        self.values = self.next_values.copy()
+        self.values = self.next_values
         self.next_values = [False] * len(self.values)
 
 
@@ -291,10 +291,7 @@ class Scanner(Module):
         target = state.get_entity(self.floor_position.shift_by(self.direction))
         enable = target is not None and target.id in (EntityId.TRAY, EntityId.MULTITRAY)
         if enable:
-            values = [enable, *state.order_signals]
-        else:
-            values = [False] * len(self.jacks)
-        self._set_signals(values, state)
+            self._set_signals([enable, *state.order_signals], state)
 
 
 class MainInput(Module):
@@ -335,11 +332,6 @@ class MainInput(Module):
             assert tray is not None
             return [MoveEntity(tray, self.direction)]
         return []
-
-    def update_signals(self, state: State) -> None:
-        if state.time == 1:
-            # only on first tick
-            self._set_signals([False] * len(self.jacks), state)
 
 
 @dataclass
