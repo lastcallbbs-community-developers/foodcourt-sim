@@ -130,6 +130,7 @@ class Solution:  # pylint: disable=too-many-instance-attributes
     def check(self) -> None:
         main_input_index = -1
         occupied_rack_slots = [[False] * 11 for _ in range(3)]
+        occupied_floor_slots = [[False] * 6 for _ in range(7)]
         module_indices: dict[ModuleId, list[int]] = defaultdict(list)
         cost = 0
         for i, module in enumerate(self.modules):
@@ -164,12 +165,20 @@ class Solution:  # pylint: disable=too-many-instance-attributes
             # check for rack collisions
             if module.on_rack:
                 pos = module.rack_position
-                if occupied_rack_slots[pos.row][pos.column]:
-                    raise InvalidSolutionError(
-                        f"rack collision at {module.rack_position}"
-                    )
-                for i in range(module.rack_width):
-                    occupied_rack_slots[pos.row][pos.column + i] = True
+                for _ in range(module.rack_width):
+                    if occupied_rack_slots[pos.row][pos.column]:
+                        raise InvalidSolutionError(f"rack collision at {pos}")
+                    occupied_rack_slots[pos.row][pos.column] = True
+                    pos = pos.shift_by(Direction.RIGHT)
+            # check for floor collisions
+            if module.on_floor:
+                pos = module.floor_position
+                width = 2 if module.id is ModuleId.OUTPUT else 1
+                for _ in range(width):
+                    if occupied_floor_slots[pos.row][pos.column]:
+                        raise InvalidSolutionError(f"floor collision at {pos}")
+                    occupied_floor_slots[pos.row][pos.column] = True
+                    pos = pos.shift_by(Direction.RIGHT)
             module_indices[module.id].append(i)
             cost += module.price
         if main_input_index == -1:
