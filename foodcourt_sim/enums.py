@@ -57,13 +57,13 @@ class ModuleId(Enum):
     FLUID_DISPENSER_1X = 25
     FLUID_DISPENSER_2X = 26
     FLUID_DISPENSER_3X = 27
-    FLUID_COATER = 28  # icing for doughnuts, sauce for da wings
+    FLUID_COATER = 28  # rosie's doughnuts, on the fried side, da wings
     OUTPUT = 29
     SENSOR = 30
     ROUTER = 31
     SORTER = 32
     STACKER = 33
-    WASTE_BIN = 34  # limit 2 for sweet heat bbq
+    WASTE_BIN = 34  # limit 2 for sweet heat bbq, 3 for da wings
     DOUBLE_SLICER = 35  # sweet heat bbq, cafe triste, sushi yeah!
     TRIPLE_SLICER = 36  # on the fried side, da wings
     ROTATOR = 37  # chaz cheddar

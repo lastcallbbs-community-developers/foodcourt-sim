@@ -81,6 +81,14 @@ class Signals:
         self.next_values = [False] * len(self.values)
 
 
+_MOVE_PRIORITY = [
+    RelativeDirection.BACK,
+    RelativeDirection.RIGHT,
+    RelativeDirection.LEFT,
+    RelativeDirection.FRONT,
+]
+
+
 @dataclass
 class Module:
     _input_directions = {RelativeDirection.BACK}
@@ -252,18 +260,17 @@ class Module:
         existing entities on this module.
         """
         del state, ignore_collisions, dry_run
-        if len(moves) > 1:
-            raise self.emergency_stop(
-                "These products have collided.", *[m.source for m in moves]
-            )
-        if (
-            moves[0].direction.back().relative_to(self.direction)
-            not in self._input_directions
-        ):
-            raise self.emergency_stop(
-                "Products cannot enter from this direction.", moves[0].source
-            )
-        return moves[0]
+        ordering = []
+        for move in moves:
+            rel_dir = move.direction.back().relative_to(self.direction)
+            if rel_dir not in self._input_directions:
+                raise self.emergency_stop(
+                    "Products cannot enter from this direction.", move.source
+                )
+            ordering.append((_MOVE_PRIORITY.index(rel_dir), move))
+        if len(moves) == 1:
+            return moves[0]
+        return min(ordering)[1]
 
     def update_signals(self, state: State) -> None:
         """Update the output signals based on the current tick.
@@ -484,6 +491,42 @@ class FluidCoater(ToppingInput):
         target.operations.append(CoatFluid(self.topping_ids[0]))
         return [MoveEntity(target, self.direction)]
 
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop(
+            "This liquid cannot be applied to this product.", move.source
+        )
+        if target.id not in (
+            EntityId.DOUGH,
+            EntityId.CHICKEN,
+            EntityId.CHICKEN_HALF,
+            EntityId.CHICKEN_CUTLET,
+            EntityId.CHICKEN_LEG,
+        ):
+            raise error
+        if (
+            state.level.id in (LevelId.ROSIES_DOUGHNUTS, LevelId.DA_WINGS)
+            and target.operations != [Operation(OperationId.COOK_FRYER)] * 2
+        ):
+            raise error
+        if state.level.id is LevelId.ON_THE_FRIED_SIDE and target.operations:
+            raise error
+        if state.level.id is LevelId.DA_WINGS and target.id not in {
+            EntityId.CHICKEN_CUTLET,
+            EntityId.CHICKEN_LEG,
+        }:
+            raise error
+        return move
+
 
 class ToppingDispenser(ToppingInput):
     _MODULE_IDS = [ModuleId.TOPPING_DISPENSER]
@@ -535,6 +578,7 @@ class HalfToppingDispenser(ToppingInput):
 
 class Conveyor(Module):
     _MODULE_IDS = [ModuleId.CONVEYOR]
+    _input_directions = set(RelativeDirection)
     price = 5
     on_rack = False
 
@@ -553,19 +597,7 @@ class Conveyor(Module):
     ) -> Optional[MoveEntity]:
         if not (state.get_entity(self.floor_position) is None or ignore_collisions):
             return None
-        priority = [
-            RelativeDirection.BACK,
-            RelativeDirection.RIGHT,
-            RelativeDirection.LEFT,
-            RelativeDirection.FRONT,
-        ]
-        move = min(
-            moves,
-            key=lambda m: priority.index(
-                m.direction.back().relative_to(self.direction)
-            ),
-        )
-        return move
+        return super().handle_moves(state, moves, ignore_collisions, dry_run)
 
 
 class Output(Module):
@@ -609,7 +641,7 @@ class Router(Module):
         return (self.current_direction,)
 
     def debug_str(self) -> str:
-        return self.current_direction.name
+        return self.current_direction.relative_to(self.direction).name
 
     def tick(self, state: State) -> list[MoveEntity]:
         if self._get_signal_count() > 1:
@@ -649,28 +681,16 @@ class EjectingModule(Module):
         dry_run: bool = False,
     ) -> Optional[MoveEntity]:
         # does not handle collisions with stopped entities
-        super().handle_moves(state, moves, ignore_collisions, dry_run)
-        priority = [
-            RelativeDirection.BACK,
-            RelativeDirection.RIGHT,
-            RelativeDirection.LEFT,
-            RelativeDirection.FRONT,
-        ]
-        move = min(
-            moves,
-            key=lambda m: priority.index(
-                m.direction.back().relative_to(self.direction)
-            ),
-        )
+        move = super().handle_moves(state, moves, ignore_collisions, dry_run)
+        assert move is not None
 
         available = state.get_entity(self.floor_position) is None or ignore_collisions
         if not available:
-            if any(jack.name == "EJECT" for jack in self.jacks):
+            if self.id is ModuleId.SORTER:
+                will_eject = self._get_signal_count() == 1
+            else:
                 # Cooker and Espresso
                 will_eject = self._get_signal("EJECT")
-            else:
-                # Sorter
-                will_eject = self._get_signal_count() == 1
             if will_eject:
                 # we're going to move the current entity away this tick, which should
                 # have been processed already
@@ -750,37 +770,35 @@ class Stacker(Module):
         return None
 
 
-# maximum number of cook operations before an entity is burnt (over all levels)
-_MAX_COOK_TIMES = {
-    EntityId.POCKET: 4,  # hot pocket
-    EntityId.DOUGH: 2,  # mumbai chaat, rosie's doughnuts
-    EntityId.CHICKEN: 8,  # on the fried side
-    EntityId.CHICKEN_HALF: 8,  # on the fried side
-    EntityId.CHICKEN_CUTLET: 4,  # on the fried side (2 for da wings)
-    EntityId.CHICKEN_LEG: 4,  # on the fried side (2 for da wings)
-    EntityId.MEAT: 4,  # meat+3, breakside grill, belly's
-    EntityId.PIZZA: 4,  # the commissary
-    EntityId.BURGER: 4,  # the commissary
-    EntityId.TENDER: 4,  # the commissary
-    EntityId.CORNDOG: 4,  # the commissary
-    EntityId.CURLY: 4,  # the commissary
-    EntityId.CRINKLE: 4,  # the commissary
-    EntityId.TOT: 4,  # the commissary
-    EntityId.EGG: 4,  # mildred's nook
-    EntityId.BACON: 4,  # mildred's nook
-    EntityId.BANGER: 4,  # mildred's nook
-    EntityId.TOMATO: 2,  # mildred's nook
-    EntityId.FUNGUS: 2,  # mildred's nook
-    EntityId.BLACK: 2,  # mildred's nook
-    EntityId.BREAD: 1,  # mildred's nook
-    EntityId.POTATO: 4,  # belly's
-    EntityId.ONION: 4,  # belly's
-}
-
-
 class Cooker(EjectingModule):
     _MODULE_IDS = [ModuleId.GRILL, ModuleId.FRYER, ModuleId.MICROWAVE]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
+    # maximum number of cook operations before an entity is burnt (over all levels)
+    _MAX_COOK_TIMES = {
+        EntityId.POCKET: 4,  # hot pocket
+        EntityId.DOUGH: 2,  # mumbai chaat, rosie's doughnuts
+        EntityId.CHICKEN: 8,  # on the fried side
+        EntityId.CHICKEN_HALF: 8,  # on the fried side
+        EntityId.CHICKEN_CUTLET: 4,  # on the fried side (2 for da wings)
+        EntityId.CHICKEN_LEG: 4,  # on the fried side (2 for da wings)
+        EntityId.MEAT: 4,  # meat+3, breakside grill, belly's
+        EntityId.PIZZA: 4,  # the commissary
+        EntityId.BURGER: 4,  # the commissary
+        EntityId.TENDER: 4,  # the commissary
+        EntityId.CORNDOG: 4,  # the commissary
+        EntityId.CURLY: 4,  # the commissary
+        EntityId.CRINKLE: 4,  # the commissary
+        EntityId.TOT: 4,  # the commissary
+        EntityId.EGG: 4,  # mildred's nook
+        EntityId.BACON: 4,  # mildred's nook
+        EntityId.BANGER: 4,  # mildred's nook
+        EntityId.TOMATO: 2,  # mildred's nook
+        EntityId.FUNGUS: 2,  # mildred's nook
+        EntityId.BLACK: 2,  # mildred's nook
+        EntityId.BREAD: 1,  # mildred's nook
+        EntityId.POTATO: 4,  # belly's
+        EntityId.ONION: 4,  # belly's
+    }
     price = 20
     jacks = [OutJack("SENSE"), InJack("EJECT")]
 
@@ -800,9 +818,32 @@ class Cooker(EjectingModule):
                 }[self.id]
             )
             # don't cook things more after they're burnt
-            if target.operations.count(op) <= _MAX_COOK_TIMES[target.id]:
+            if target.operations.count(op) <= self._MAX_COOK_TIMES[target.id]:
                 target.operations.append(op)
         return []
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop(
+            "This product cannot be heated by this machine.", move.source
+        )
+        if target.id not in self._MAX_COOK_TIMES:
+            raise error
+        if (
+            state.level.id is LevelId.ON_THE_FRIED_SIDE
+            and CoatFluid(ToppingId.BREADING) not in target.operations
+        ):
+            raise error
+        return move
 
     def update_signals(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
@@ -906,9 +947,10 @@ class TripleSlicer(SimpleMachine):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        actions: list[MoveEntity]
-        if target not in (Entity(EntityId.CHICKEN), Entity(EntityId.CHICKEN_HALF)):
-            raise self.emergency_stop("This product cannot be sliced.")
+        assert target.id in (
+            EntityId.CHICKEN,
+            EntityId.CHICKEN_HALF,
+        ), "should have been caught in handle_moves()"
         state.remove_entity(target)
         leg = Entity(EntityId.CHICKEN_LEG, position=self.floor_position)
         cutlet = Entity(EntityId.CHICKEN_CUTLET, position=self.floor_position)
@@ -920,15 +962,33 @@ class TripleSlicer(SimpleMachine):
             entity_t = cutlet
         state.add_entity(entity_r)
         state.add_entity(entity_t)
-        actions = [
+        moves = [
             MoveEntity(entity_r, direction=self.direction.right()),
             MoveEntity(entity_t, direction=self.direction),
         ]
         if target.id == EntityId.CHICKEN:
             entity_l = Entity(EntityId.CHICKEN_HALF, position=self.floor_position)
             state.add_entity(entity_l)
-            actions.append(MoveEntity(entity_l, direction=self.direction.left()))
-        return actions
+            moves.append(MoveEntity(entity_l, direction=self.direction.left()))
+        return moves
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be sliced.", move.source)
+        if target.id not in (EntityId.CHICKEN, EntityId.CHICKEN_HALF):
+            raise error
+        if target.operations or target.stack:
+            raise error
+        return move
 
 
 class HorizontalSlicer(SimpleMachine):
@@ -938,17 +998,34 @@ class HorizontalSlicer(SimpleMachine):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        if target == Entity(EntityId.BUN):
-            state.remove_entity(target)
-            entity_r = Burger(position=self.floor_position)
-            entity_l = Entity(EntityId.BUN_TOP, position=self.floor_position)
-            state.add_entity(entity_r)
-            state.add_entity(entity_l)
-            return [
-                MoveEntity(entity_r, direction=self.direction.right()),
-                MoveEntity(entity_l, direction=self.direction.left()),
-            ]
-        raise self.emergency_stop("This product cannot be sliced.")
+        assert target.id is EntityId.BUN, "should have been caught in handle_moves()"
+        state.remove_entity(target)
+        entity_r = Burger(position=self.floor_position)
+        entity_l = Entity(EntityId.BUN_TOP, position=self.floor_position)
+        state.add_entity(entity_r)
+        state.add_entity(entity_l)
+        return [
+            MoveEntity(entity_r, direction=self.direction.right()),
+            MoveEntity(entity_l, direction=self.direction.left()),
+        ]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be sliced.", move.source)
+        if target.id is not EntityId.BUN:
+            raise error
+        if target.operations or target.stack:
+            raise error
+        return move
 
 
 class Roller(SimpleMachine):
@@ -958,25 +1035,15 @@ class Roller(SimpleMachine):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        error = self.emergency_stop("This product cannot be rolled.")
         if target.id is EntityId.PAPER:
-            if target.operations != [DispenseTopping(ToppingId.LEAVES)]:
-                raise error
+            assert target.operations == [
+                DispenseTopping(ToppingId.LEAVES)
+            ], "should have been caught in handle_moves()"
             state.remove_entity(target)
             entity = Entity(EntityId.CIGARETTE_4X, position=self.floor_position)
             state.add_entity(entity)
             return [MoveEntity(entity, self.direction)]
         if isinstance(target, Nori):
-            if not (
-                len(target.multistack) == 2
-                and target.multistack[0] == target.multistack[1]
-                and target.multistack[0]
-                in [
-                    Entity(EntityId.RICE, stack=Entity(fish))
-                    for fish in [EntityId.TUNA, EntityId.SALMON]
-                ]
-            ):
-                raise error
             if target.multistack[0].stack.id is EntityId.TUNA:  # type: ignore
                 roll_type = EntityId.TUNA_MAKI_4X
             else:
@@ -985,6 +1052,36 @@ class Roller(SimpleMachine):
             entity = Entity(roll_type, position=self.floor_position)
             state.add_entity(entity)
             return [MoveEntity(entity, self.direction)]
+        assert False, "should have been caught in handle_moves()"
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be rolled.", move.source)
+        if target.id not in (EntityId.PAPER, EntityId.NORI):
+            raise error
+        if target.id is EntityId.PAPER and target.operations == [
+            DispenseTopping(ToppingId.LEAVES)
+        ]:
+            return move
+        if isinstance(target, Nori) and (
+            len(target.multistack) == 2
+            and target.multistack[0] == target.multistack[1]
+            and target.multistack[0]
+            in [
+                Entity(EntityId.RICE, stack=Entity(fish))
+                for fish in [EntityId.TUNA, EntityId.SALMON]
+            ]
+        ):
+            return move
         raise error
 
 
@@ -995,10 +1092,29 @@ class Docker(SimpleMachine):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        if not isinstance(target, ChaatDough):
-            raise self.emergency_stop("This product cannot be rolled.")
+        assert isinstance(
+            target, ChaatDough
+        ), "should have been caught in handle_moves()"
         target.operations.append(Dock())
         return [MoveEntity(target, self.direction)]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be rolled.", move.source)
+        if not isinstance(target, ChaatDough):
+            raise error
+        if target.operations or target.stack:
+            raise error
+        return move
 
 
 class Flattener(SimpleMachine):
@@ -1012,10 +1128,32 @@ class Flattener(SimpleMachine):
         # can operate on top of tray
         if target.id is EntityId.TRAY and target.stack is not None:
             target = target.stack
-        if not isinstance(target, PizzaDough):
-            raise self.emergency_stop("This product cannot be rolled.")
+        assert isinstance(
+            target, PizzaDough
+        ), "should have been caught in handle_moves()"
         target.operations.append(Flatten())
         return [MoveEntity(entity, self.direction)]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        # can operate on top of tray
+        if target.id is EntityId.TRAY and target.stack is not None:
+            target = target.stack
+        error = self.emergency_stop("This product cannot be rolled.", move.source)
+        if not isinstance(target, PizzaDough):
+            raise error
+        if target.operations and target.operations != [Flatten()]:
+            raise error
+        return move
 
 
 class Rotator(SimpleMachine):
@@ -1030,14 +1168,32 @@ class Rotator(SimpleMachine):
         # can operate on top of tray
         if target.id is EntityId.TRAY and target.stack is not None:
             target = target.stack
-        if not isinstance(target, PizzaDough):
-            raise self.emergency_stop("This product cannot be rotated.")
-        # swap left and right toppings
-        target.left_toppings, target.right_toppings = (
-            target.right_toppings,
-            target.left_toppings,
-        )
+        if isinstance(target, PizzaDough):
+            # swap left and right toppings
+            target.left_toppings, target.right_toppings = (
+                target.right_toppings,
+                target.left_toppings,
+            )
         return [MoveEntity(entity, self.direction)]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        # can operate on top of tray
+        if target.id is EntityId.TRAY and target.stack is not None:
+            target = target.stack
+        error = self.emergency_stop("This product cannot be rolled.", move.source)
+        if not (isinstance(target, PizzaDough) or target.id is EntityId.TRAY):
+            raise error
+        return move
 
 
 @dataclass
@@ -1055,8 +1211,9 @@ class Painter(Module):
         target = state.get_entity(self.floor_position)
         if target is None:
             return []
-        if not isinstance(target, PaintableCup):
-            raise self.emergency_stop("This product cannot be painted.")
+        assert isinstance(
+            target, PaintableCup
+        ), "should have been caught in handle_moves()"
         # paint colors go from top to bottom
         indices = {
             PaintMask.UPPER_2: [0, 1],
@@ -1067,6 +1224,22 @@ class Painter(Module):
         for i in indices:
             target.colors[i] = self.color
         return [MoveEntity(target, self.direction)]
+
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        move = super().handle_moves(state, moves)
+        if move is None:
+            return None
+        target = move.entity
+        error = self.emergency_stop("This product cannot be painted.", move.source)
+        if not isinstance(target, PaintableCup):
+            raise error
+        return move
 
 
 @dataclass
