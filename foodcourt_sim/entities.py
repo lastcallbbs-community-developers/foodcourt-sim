@@ -76,7 +76,6 @@ class Entity:
             EntityId.MULTITRAY,
             EntityId.CUP,
             EntityId.WING_PLACEHOLDER,
-            EntityId.BUN_BOTTOM,
             EntityId.NORI,
             EntityId.PLATE,
         ):
@@ -148,19 +147,20 @@ class MultiStackEntity(Entity):
         )
 
     def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
+        # try stacking on existing stacks first
+        for stack in self.multistack:
+            try:
+                stack.add_to_stack(state, other, error)
+            except type(error):
+                continue
+            else:
+                return
         if self.get_capacity() and len(self.multistack) == self.get_capacity():
-            for stack in self.multistack:
-                try:
-                    stack.add_to_stack(state, other, error)
-                except type(error):
-                    continue
-                else:
-                    break
-        else:
-            if other.id not in _STACK_WHITELIST[self.id]:
-                raise error
-            state.remove_entity(other)
-            self.multistack.append(other)
+            raise error
+        if other.id not in _STACK_WHITELIST[self.id]:
+            raise error
+        state.remove_entity(other)
+        self.multistack.append(other)
 
 
 @dataclass(eq=False, repr=False)
@@ -256,17 +256,6 @@ class WingPlaceholder(Entity):
     # __lt__() can be left as-is, since WING_PLACEHOLDER comes right after
     # CHICKEN_CUTLET and CHICKEN_LEG, and this should only be used in the level
     # definition anyway.
-
-
-@dataclass(eq=False, repr=False)
-class Burger(MultiStackEntity):
-    """Burger for Breakside Grill and Belly's."""
-
-    id: EntityId = EntityId.BUN_BOTTOM
-
-    def _compare_key(self) -> tuple[Any, ...]:
-        # stack order matters for this entity
-        return (*super()._compare_key(), self.multistack)
 
 
 @dataclass(eq=False, repr=False)

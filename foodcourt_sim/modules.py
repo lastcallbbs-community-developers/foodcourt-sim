@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Sequence, Type, Uni
 
 from . import logger
 from .entities import (
-    Burger,
     ChaatDough,
     Cup,
     Entity,
@@ -1000,7 +999,7 @@ class HorizontalSlicer(SimpleMachine):
             return []
         assert target.id is EntityId.BUN, "should have been caught in handle_moves()"
         state.remove_entity(target)
-        entity_r = Burger(position=self.floor_position)
+        entity_r = Entity(EntityId.BUN_BOTTOM, position=self.floor_position)
         entity_l = Entity(EntityId.BUN_TOP, position=self.floor_position)
         state.add_entity(entity_r)
         state.add_entity(entity_l)

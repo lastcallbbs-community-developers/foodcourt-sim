@@ -3,7 +3,6 @@ import itertools
 from collections import Counter
 
 from foodcourt_sim.entities import (
-    Burger,
     ChaatDough,
     Cup,
     Entity,
@@ -14,7 +13,7 @@ from foodcourt_sim.entities import (
     SushiPlate,
 )
 from foodcourt_sim.enums import EntityId, LevelId, PaintColor, ToppingId
-from foodcourt_sim.levels import BY_ID, multitray, tray
+from foodcourt_sim.levels import BY_ID, build_burger, multitray, tray
 from foodcourt_sim.operations import (
     CoatFluid,
     CookFryer,
@@ -290,17 +289,16 @@ def test_breakside():
     orders = [Entity(E.TRAY), *level.order_products]
 
     # fmt: off
-    assert tray(Burger(multistack=[
+    # TODO: missing tests
+    assert tray(build_burger([
         Entity(E.MEAT, [CookGrill()]*4),
         Entity(E.CHEESE),
         Entity(E.PICKLE),
-        Entity(E.BUN_TOP),
     ])) == orders[7]
-    assert tray(Burger(multistack=[
+    assert tray(build_burger([
         Entity(E.MEAT, [CookGrill()]*4),
         Entity(E.PICKLE),
         Entity(E.CHEESE),
-        Entity(E.BUN_TOP),
     ])) != orders[7]
     # fmt: on
 
@@ -400,42 +398,42 @@ def test_bellys():
 
     # fmt: off
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
         Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
     ) == orders[1]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
         Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
     ) == orders[2]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
         Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
     ) == orders[3]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
         Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
     ) == orders[4]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
         Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
     ) == orders[5]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
         Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
     ) == orders[6]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
         Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
     ) == orders[7]
     assert multitray(
-        Burger(multistack=[Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE), Entity(E.BUN_TOP)]),
+        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
         Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
         Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
     ) == orders[8]

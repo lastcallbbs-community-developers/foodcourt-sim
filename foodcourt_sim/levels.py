@@ -3,7 +3,6 @@ from collections import Counter
 from dataclasses import InitVar, dataclass, field
 
 from .entities import (
-    Burger,
     ChaatDough,
     Cup,
     Entity,
@@ -102,18 +101,35 @@ def meat_3_helper(mac: bool, slaw: bool, greens: bool, beans: bool) -> Entity:
     return multitray(*dishes)
 
 
-def breakside_helper(count: int, cheese: bool, pickle: bool, tomato: bool) -> Entity:
-    patty = [Entity(E.MEAT, [CookGrill()] * 4)]
-    if cheese:
-        patty.append(Entity(E.CHEESE))
+def build_burger(middle: list[Entity]) -> Entity:
+    """Build a burger by recursively stacking its components."""
+    assert len(set(map(id, middle))) == len(
+        middle
+    ), "same entity repeated multiple times in build_burger()"
 
-    parts = [*patty] * count
+    bottom = Entity(E.BUN_BOTTOM)
+    top = bottom
+    for entity in middle:
+        assert not entity.stack, "burger parts should not be pre-stacked"
+        top.stack = entity
+        top = entity
+
+    top.stack = Entity(E.BUN_TOP)
+    return bottom
+
+
+def breakside_helper(count: int, cheese: bool, pickle: bool, tomato: bool) -> Entity:
+    parts = []
+    for _ in range(count):
+        parts.append(Entity(E.MEAT, [CookGrill()] * 4))
+        if cheese:
+            parts.append(Entity(E.CHEESE))
+
     if pickle:
         parts.append(Entity(E.PICKLE))
     if tomato:
         parts.append(Entity(E.TOMATO))
-    parts.append(Entity(E.BUN_TOP))
-    return tray(Burger(multistack=parts))
+    return tray(build_burger(parts))
 
 
 def chaz_cheddar_helper(
@@ -157,8 +173,7 @@ def bellys_helper(cheese: bool, side_id: EntityId, drink: ToppingId) -> Entity:
     parts = [Entity(E.MEAT, [CookFryer()] * 4)]
     if cheese:
         parts.append(Entity(E.CHEESE))
-    parts.append(Entity(E.BUN_TOP))
-    burger = Burger(multistack=parts)
+    burger = build_burger(parts)
     cup = Cup(stack=Entity(E.LID), contents=Counter({drink: 2}))
     side = Cup(stack=Entity(side_id, [CookFryer()] * 4))
     return multitray(burger, cup, side)
