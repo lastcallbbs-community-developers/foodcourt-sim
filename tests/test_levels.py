@@ -289,12 +289,151 @@ def test_breakside():
     orders = [Entity(E.TRAY), *level.order_products]
 
     # fmt: off
-    # TODO: missing tests
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+    ])) == orders[1]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.TOMATO),
+    ])) == orders[2]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+    ])) == orders[3]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[4]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+    ])) == orders[5]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.TOMATO),
+    ])) == orders[6]
     assert tray(build_burger([
         Entity(E.MEAT, [CookGrill()]*4),
         Entity(E.CHEESE),
         Entity(E.PICKLE),
     ])) == orders[7]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[8]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+    ])) == orders[9]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.TOMATO),
+    ])) == orders[10]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+    ])) == orders[11]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[12]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+    ])) == orders[13]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.TOMATO),
+    ])) == orders[14]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.PICKLE),
+    ])) == orders[15]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[16]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+    ])) == orders[17]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.TOMATO),
+    ])) == orders[18]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+    ])) == orders[19]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[20]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+    ])) == orders[21]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.TOMATO),
+    ])) == orders[22]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.PICKLE),
+    ])) == orders[23]
+    assert tray(build_burger([
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.MEAT, [CookGrill()]*4),
+        Entity(E.CHEESE),
+        Entity(E.PICKLE),
+        Entity(E.TOMATO),
+    ])) == orders[24]
+
     assert tray(build_burger([
         Entity(E.MEAT, [CookGrill()]*4),
         Entity(E.PICKLE),
