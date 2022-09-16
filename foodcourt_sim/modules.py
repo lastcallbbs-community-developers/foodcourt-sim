@@ -710,9 +710,9 @@ class Sorter(EjectingModule):
     jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
 
     def tick(self, state: State) -> list[MoveEntity]:
-        target = state.get_entity(self.floor_position)
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
+        target = state.get_entity(self.floor_position)
         if target is None:
             return []
         direction = None
@@ -1330,7 +1330,8 @@ class Multimixer(Module):
         super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = any(self.signals.next_values[:4])
-        self._set_signals([value] * 4, state, seen)
+        if value:
+            self._set_signals([value] * 4, state, seen)
 
 
 class MultimixerEnable(Module):
@@ -1349,7 +1350,8 @@ class MultimixerEnable(Module):
         super()._set_input_signal(idx, value, state, seen)
         # propagate to all connected outputs
         value = self.signals.next_values[0] and any(self.signals.next_values[1:4])
-        self._set_signals([value] * 3, state, seen)
+        if value:
+            self._set_signals([value] * 3, state, seen)
 
 
 @dataclass
@@ -1378,10 +1380,13 @@ class SmallCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def update_signals(self, state: State) -> None:
+    def tick(self, state: State) -> list[MoveEntity]:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
                 self.count = max(-99, min(self.count + increment, 99))
+        return []
+
+    def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
 
 
@@ -1418,10 +1423,13 @@ class BigCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def update_signals(self, state: State) -> None:
+    def tick(self, state: State) -> list[MoveEntity]:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
                 self.count = max(-99, min(self.count + increment, 99))
+        return []
+
+    def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
         self._set_signal("POS", self.count > 0, state)
 
@@ -1458,16 +1466,17 @@ class Sequencer(Module):
         return f"row={self.current_row}"
 
     def tick(self, state: State) -> list[MoveEntity]:
-        if self._get_signal("STOP"):
+        if 0 <= self.current_row < 12:
+            self.current_row += 1
+        if self.current_row == 12 or self._get_signal("STOP"):
             self.current_row = -1
         if self.current_row == -1 and self._get_signal("START"):
             self.current_row = 0
+        return []
+
+    def update_signals(self, state: State) -> None:
         if 0 <= self.current_row < 12:
             self._set_signals(self.rows[self.current_row], state)
-            self.current_row += 1
-        if self.current_row == 12:
-            self.current_row = -1
-        return []
 
 
 def populate_module_table() -> dict[ModuleId, Type[Module]]:
