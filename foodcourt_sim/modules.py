@@ -736,8 +736,6 @@ class Stacker(Module):
     price = 20
     jacks = [OutJack("STACK"), InJack("EJECT")]
 
-    __hash__ = Module.__hash__
-
     def tick(self, state: State) -> list[MoveEntity]:
         target = state.get_entity(self.floor_position)
         if target is None or not self._get_signal("EJECT"):

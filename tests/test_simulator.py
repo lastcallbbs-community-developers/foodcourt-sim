@@ -20,8 +20,7 @@ def pytest_generate_tests(metafunc):
     # first entry is a sorting key
     entries: list[tuple[tuple[Any, ...], tuple[Solution, int], str]] = []
     for filepath in sorted(solutions_dir.glob("*/*.solution")):
-        with open(filepath, "rb") as f:
-            solution = read_solution(f)
+        solution = read_solution(filepath)
         if (metafunc.function is test_solved) != solution.solved:
             continue
         level = solution.level
@@ -70,24 +69,18 @@ def test_unsolved(solution: Solution, order_index: int) -> None:
     "solution_name", [f"movement-testing-{n}.solution" for n in range(1, 9)]
 )
 def test_movement(solution_name: str) -> None:
-    with open(solutions_dir / "yut23" / solution_name, "rb") as f:
-        solution = read_solution(f)
-
+    solution = read_solution(solutions_dir / "yut23" / solution_name)
     with pytest.raises(TimeLimitExceeded) as excinfo:
         simulate_order(solution, 0, time_limit=20, debug=True)
     assert excinfo.value.time < 20
 
 
 def test_loops() -> None:
-    with open(solutions_dir / "yut23" / "loop-testing-1.solution", "rb") as f:
-        solution = read_solution(f)
-
+    solution = read_solution(solutions_dir / "yut23" / "loop-testing-1.solution")
     ticks = simulate_order(solution, 0, time_limit=22, debug=True).time
     assert ticks == 22
 
-    with open(solutions_dir / "yut23" / "loop-testing-2.solution", "rb") as f:
-        solution = read_solution(f)
-
+    solution = read_solution(solutions_dir / "yut23" / "loop-testing-2.solution")
     with pytest.raises(EmergencyStop) as excinfo:
         simulate_order(solution, 0, time_limit=12, debug=True)
     assert excinfo.value.message == "Emergency stop: This product cannot be sliced."
@@ -95,9 +88,7 @@ def test_loops() -> None:
 
 
 def test_2twelve():
-    with open(solutions_dir / "yut23" / "2twelve-1.solution", "rb") as f:
-        solution = read_solution(f)
-
+    solution = read_solution(solutions_dir / "yut23" / "2twelve-1.solution")
     state = simulate_order(solution, 1, time_limit=8, debug=True)
     assert state.time == 8
     state = simulate_order(solution, 0, time_limit=8, debug=True)

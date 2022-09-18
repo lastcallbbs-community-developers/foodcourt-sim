@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import contextlib
 import io
 import struct
-from typing import Any, Optional, Union
+from pathlib import Path
+from typing import Any, BinaryIO, Generator, Optional, Union, cast
 
 from .enums import LevelId, ModuleId, MusicMode, PaintColor, PaintMask
 from .errors import InvalidSolutionError
@@ -18,59 +20,62 @@ from .modules import (
     SmallCounter,
 )
 
+__all__ = ["read_solution", "read_solutions", "write_solution"]
 
-def read_bytes(stream: io.BufferedIOBase, size: int) -> bytes:
+
+def read_bytes(stream: BinaryIO, size: int) -> bytes:
     b = stream.read(size)
-    assert (
-        len(b) == size
-    ), f"could not read enough bytes (requested: {size}, got: {len(b)})"
+    if len(b) != size:
+        raise EOFError(
+            f"could not read enough bytes (requested: {size}, got: {len(b)})"
+        )
     return b
 
 
-def write_bytes(stream: io.BufferedIOBase, b: bytes) -> None:
+def write_bytes(stream: BinaryIO, b: bytes) -> None:
     stream.write(b)
 
 
-def read_int(stream: io.BufferedIOBase, size: int) -> int:
+def read_int(stream: BinaryIO, size: int) -> int:
     return int.from_bytes(read_bytes(stream, size), byteorder="little", signed=True)
 
 
-def write_int(stream: io.BufferedIOBase, value: int, size: int) -> None:
+def write_int(stream: BinaryIO, value: int, size: int) -> None:
     stream.write(value.to_bytes(size, byteorder="little", signed=True))
 
 
-def read_bool(stream: io.BufferedIOBase) -> bool:
+def read_bool(stream: BinaryIO) -> bool:
     x = read_bytes(stream, 1)[0]
     assert x in [0, 1], f"invalid bool value {x:#x}"
     return x == 1
 
 
-def write_bool(stream: io.BufferedIOBase, b: bool) -> None:
+def write_bool(stream: BinaryIO, b: bool) -> None:
     stream.write(b.to_bytes(1, byteorder="little"))
 
 
-def read_string(stream: io.BufferedIOBase) -> str:
+def read_string(stream: BinaryIO) -> str:
     size = read_int(stream, 4)
     return read_bytes(stream, size).decode()
 
 
-def write_string(stream: io.BufferedIOBase, s: str) -> None:
+def write_string(stream: BinaryIO, s: str) -> None:
     write_int(stream, len(s), 4)
     write_bytes(stream, s.encode())
 
 
-def read_position(stream: io.BufferedIOBase) -> Position:
+def read_position(stream: BinaryIO) -> Position:
     column = read_int(stream, 4)
     row = read_int(stream, 4)
     return Position(column, row)
 
 
-def write_position(stream: io.BufferedIOBase, pos: Position) -> None:
+def write_position(stream: BinaryIO, pos: Position) -> None:
     write_int(stream, pos.column, 4)
     write_int(stream, pos.row, 4)
 
 
-def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
+def read_module(stream: BinaryIO, level: Level) -> Module:
     module_id = ModuleId(read_int(stream, 4))
     cls = MODULE_LOOKUP[module_id]
     can_delete = read_bool(stream)
@@ -98,7 +103,7 @@ def read_module(stream: io.BufferedIOBase, level: Level) -> Module:
     return cls(level, module_id, can_delete, rack_pos, floor_pos, direction, **extras)
 
 
-def write_module(stream: io.BufferedIOBase, module: Module) -> None:
+def write_module(stream: BinaryIO, module: Module) -> None:
     write_int(stream, module.id.value, 4)
     write_bool(stream, module.can_delete)
     write_position(stream, module.rack_position)
@@ -119,7 +124,7 @@ def write_module(stream: io.BufferedIOBase, module: Module) -> None:
     write_int(stream, module.direction.value, 1)
 
 
-def read_wire(stream: io.BufferedIOBase) -> Wire:
+def read_wire(stream: BinaryIO) -> Wire:
     module_1 = read_int(stream, 4)
     jack_1 = read_int(stream, 4)
     module_2 = read_int(stream, 4)
@@ -127,20 +132,14 @@ def read_wire(stream: io.BufferedIOBase) -> Wire:
     return Wire(module_1, jack_1, module_2, jack_2)
 
 
-def write_wire(stream: io.BufferedIOBase, wire: Wire) -> None:
+def write_wire(stream: BinaryIO, wire: Wire) -> None:
     write_int(stream, wire.module_1, 4)
     write_int(stream, wire.jack_1, 4)
     write_int(stream, wire.module_2, 4)
     write_int(stream, wire.jack_2, 4)
 
 
-def read_solution(
-    data: Union[bytes, io.BufferedIOBase], filename: Optional[str] = None
-) -> Solution:
-    if isinstance(data, io.BufferedIOBase):
-        stream = data
-    else:
-        stream = io.BytesIO(data)
+def _read_solution(stream: BinaryIO, filename: Optional[str] = None) -> Solution:
     version = read_int(stream, 4)
     if not 1000 <= version <= 1013:
         raise InvalidSolutionError(
@@ -167,7 +166,61 @@ def read_solution(
     return solution
 
 
-def write_solution(stream: io.BufferedIOBase, solution: Solution) -> None:
+@contextlib.contextmanager
+def _to_stream(
+    data: Union[Path, bytes, BinaryIO]
+) -> Generator[tuple[BinaryIO, Optional[str]], None, None]:
+    """Yield (stream, filename)."""
+    close = False
+    stream: BinaryIO
+    filename = None
+    try:
+        if isinstance(data, io.BufferedIOBase):
+            stream = cast(BinaryIO, data)
+            if hasattr(data, "name"):
+                stream_name = getattr(data, "name")
+                if isinstance(stream_name, str) and stream_name.endswith(".solution"):
+                    # this skips file descriptors and things like "/dev/stdin"
+                    filename = stream_name
+            yield stream, filename
+        elif isinstance(data, Path):
+            stream = data.open("rb")
+            close = True
+            if data.name.endswith(".solution"):
+                filename = data.name
+            yield stream, filename
+        elif isinstance(data, bytes):
+            stream = io.BytesIO(data)
+            close = True
+            yield stream, None
+        else:
+            raise TypeError("data must be one of: Path, bytes, or BufferedIOBase")
+    finally:
+        if close:
+            stream.close()
+
+
+def read_solution(data: Union[Path, bytes, BinaryIO]) -> Solution:
+    with _to_stream(data) as args:
+        try:
+            return _read_solution(*args)
+        except EOFError as e:
+            raise InvalidSolutionError("hit end of file while reading solution") from e
+
+
+def read_solutions(
+    data: Union[Path, bytes, BinaryIO]
+) -> Generator[Solution, None, None]:
+    """Reads one or more concatenated solutions from the input data."""
+    with _to_stream(data) as args:
+        while True:
+            try:
+                yield _read_solution(*args)
+            except EOFError:
+                break
+
+
+def write_solution(stream: BinaryIO, solution: Solution) -> None:
     write_int(stream, solution.version, 4)
     write_int(stream, solution.level_id.value, 4)
     write_string(stream, solution.name)
