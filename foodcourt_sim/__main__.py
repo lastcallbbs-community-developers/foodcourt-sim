@@ -45,7 +45,7 @@ def get_exit_code(ex: Exception) -> int:
     return 255
 
 
-def to_json(solution: Optional[Solution], **kwargs: Any) -> dict[str, Any]:
+def to_json(solution: Optional[Solution], /, **kwargs: Any) -> dict[str, Any]:
     result = {}
     if solution is not None:
         result.update(
@@ -67,8 +67,8 @@ def metrics_to_json(
 ) -> dict[str, Any]:
     kwargs = dataclasses.asdict(metrics)
     if include_solution:
-        kwargs["solution"] = base64.b64encode(dump_solution(solution))
-    return to_json(solution, is_correct=True, **dataclasses.asdict(metrics))
+        kwargs["solution"] = base64.b64encode(dump_solution(solution)).decode()
+    return to_json(solution, is_correct=True, **kwargs)
 
 
 def error_to_json(
