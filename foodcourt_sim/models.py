@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import dataclasses
 import functools
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, unique
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
-from .enums import LevelId, ModuleId
+from .enums import JackDirection, LevelId, ModuleId
 from .errors import InvalidSolutionError
 
 if TYPE_CHECKING:
@@ -235,6 +236,50 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                 )
         else:
             self.cost = cost
+
+    def normalize(self) -> Solution:
+        """Normalize the internals so identical-appearing solutions export to
+        identical files (excluding wire layering).
+        """
+        modules = [m.copy(self.level) for m in self.modules]
+        # set unused positions to (1000, 0) (the game already does this sometimes)
+        for module in modules:
+            if not module.on_rack:
+                module.rack_position = Position(1000, 0)
+            if not module.on_floor:
+                module.floor_position = Position(1000, 0)
+
+        # mapping from module output jacks to module with connected input jack
+        wire_map: dict[Module, dict[int, tuple[Module, int]]] = defaultdict(dict)
+        # normalize wire directions
+        for wire in self.wires:
+            module_1 = modules[wire.module_1]
+            module_2 = modules[wire.module_2]
+            jack_1 = wire.jack_1
+            jack_2 = wire.jack_2
+            if module_1.jacks[wire.jack_1].direction is JackDirection.IN:
+                # reverse wire
+                module_1, jack_1, module_2, jack_2 = module_2, jack_2, module_1, jack_1
+            wire_map[module_1][jack_1] = (module_2, jack_2)
+
+        # sort modules by floor position, rack position, then module id
+        modules.sort(key=lambda m: (m.floor_position, m.rack_position, m.id))
+
+        # regenerate wire list
+        wires = []
+        for i, module_1 in enumerate(modules):
+            for jack_1, (module_2, jack_2) in wire_map[module_1].items():
+                wires.append(
+                    Wire(
+                        module_1=i,
+                        jack_1=jack_1,
+                        module_2=modules.index(module_2),
+                        jack_2=jack_2,
+                    )
+                )
+        wires.sort()
+
+        return dataclasses.replace(self, modules=modules, wires=wires)
 
 
 @functools.total_ordering  # optimization note: this adds some overhead (see the docs)

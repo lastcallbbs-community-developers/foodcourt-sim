@@ -1,3 +1,4 @@
+# pylint: disable=wrong-import-position
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,5 +17,5 @@ from . import (
 )
 from .errors import *
 from .levels import BY_ID, BY_NUMBER, LEVELS
-from .savefile import read_solution, write_solution
+from .savefile import dump_solution, read_solution, write_solution
 from .simulator import simulate_order, simulate_solution

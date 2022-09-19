@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import base64
 import dataclasses
 import json
 import logging
@@ -19,7 +20,7 @@ from .errors import (
 )
 from .levels import LEVELS
 from .models import Solution
-from .savefile import read_solution, read_solutions
+from .savefile import dump_solution, read_solution, read_solutions
 from .simulator import Metrics, simulate_solution
 
 REPORT_MESSAGE = "Please contact @yut23#9382 on the Zachtronics discord or open an issue at https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new."
@@ -61,7 +62,12 @@ def to_json(solution: Optional[Solution], **kwargs: Any) -> dict[str, Any]:
     return result
 
 
-def metrics_to_json(solution: Solution, metrics: Metrics) -> dict[str, Any]:
+def metrics_to_json(
+    solution: Solution, metrics: Metrics, include_solution: bool
+) -> dict[str, Any]:
+    kwargs = dataclasses.asdict(metrics)
+    if include_solution:
+        kwargs["solution"] = base64.b64encode(dump_solution(solution))
     return to_json(solution, is_correct=True, **dataclasses.asdict(metrics))
 
 
@@ -91,6 +97,11 @@ def main() -> None:
         "solution_dir",
         type=Path,
         help="Path to solution directory",
+    )
+    parser_validate_all.add_argument(
+        "--include-solution",
+        action="store_true",
+        help="Include the normalized solution in the JSON output",
     )
     parser_validate_all.add_argument(
         "--json", action="store_true", help="Use JSON output mode"
@@ -127,7 +138,9 @@ def main() -> None:
                     json_results.append(error_to_json(solution, ex))
                     exit_code = get_exit_code(ex)
                 else:
-                    json_results.append(metrics_to_json(solution, metrics))
+                    json_results.append(
+                        metrics_to_json(solution, metrics, args.include_solution)
+                    )
                 if not args.json:
                     print(f"  {solution.name+':':{name_width+1}s} ", end="")
                     if json_results[-1]["is_correct"]:
@@ -163,6 +176,11 @@ def main() -> None:
         type=int,
         default=1000,
         help="Maximum number of ticks to run unsolved solutions before halting (default is 1000, pass -1 for no limit)",
+    )
+    parser_simulate.add_argument(
+        "--include-solution",
+        action="store_true",
+        help="Include the normalized solution in the JSON output",
     )
     output_group = parser_simulate.add_mutually_exclusive_group()
     output_group.add_argument(
@@ -226,7 +244,9 @@ def main() -> None:
                 if not args.json:
                     print(f"Simulation failed:\n{ex}")
             else:
-                results.append(metrics_to_json(solution, metrics))
+                results.append(
+                    metrics_to_json(solution, metrics, args.include_solution)
+                )
             if not args.json and results[-1]["is_correct"]:
                 for field in dataclasses.fields(metrics):
                     print(field.name, "=", getattr(metrics, field.name))

@@ -15,6 +15,32 @@ __all__ = [
 ]
 
 
+# from enum docs
+class OrderedEnum(Enum):
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value >= other.value
+        return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value > other.value
+        return NotImplemented
+
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value <= other.value
+        return NotImplemented
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
+
 @unique
 class LevelId(Enum):
     TWO_TWELVE = 1
@@ -44,7 +70,7 @@ class LevelId(Enum):
 
 
 @unique
-class ModuleId(Enum):
+class ModuleId(OrderedEnum):
     MULTIMIXER_ENABLE = 10
     SEQUENCER = 11
     SMALL_COUNTER = 12
@@ -83,29 +109,6 @@ class ModuleId(Enum):
     HORIZONTAL_SLICER = 54  # breakside grill, belly's
     FREEZER_3X = 55
 
-    MAIN_INPUT_BASE = 199
-    TWO_TWELVE_INPUT = 200
-    HOT_POCKET_INPUT = 201
-    WINE_INPUT = 207
-    MUMBAI_CHAAT_INPUT = 205
-    MR_CHILLY_INPUT = 202
-    KAZAN_INPUT = 204
-    SODA_TRENCH_INPUT = 208
-    ROSIES_DOUGHNUTS_INPUT = 206
-    ON_THE_FRIED_SIDE_INPUT = 203
-    SWEET_HEAT_BBQ_INPUT = 213
-    THE_WALRUS_INPUT = 219
-    MEAT_3_INPUT = 209
-    CAFE_TRISTE_INPUT = 212
-    THE_COMMISSARY_INPUT = 214
-    DA_WINGS_INPUT = 210
-    BREAKSIDE_GRILL_INPUT = 217
-    CHAZ_CHEDDAR_INPUT = 215
-    HALF_CAFF_COFFEE_INPUT = 216
-    MILDREDS_NOOK_INPUT = 218
-    BELLYS_INPUT = 211
-    SUSHI_YEAH_INPUT = 220
-
     SCANNER_BASE = 149
     TWO_TWELVE_SCANNER = 150
     HOT_POCKET_SCANNER = 151
@@ -129,8 +132,28 @@ class ModuleId(Enum):
     BELLYS_SCANNER = 161
     SUSHI_YEAH_SCANNER = 170
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}.{self.name}"
+    MAIN_INPUT_BASE = 199
+    TWO_TWELVE_INPUT = 200
+    HOT_POCKET_INPUT = 201
+    WINE_INPUT = 207
+    MUMBAI_CHAAT_INPUT = 205
+    MR_CHILLY_INPUT = 202
+    KAZAN_INPUT = 204
+    SODA_TRENCH_INPUT = 208
+    ROSIES_DOUGHNUTS_INPUT = 206
+    ON_THE_FRIED_SIDE_INPUT = 203
+    SWEET_HEAT_BBQ_INPUT = 213
+    THE_WALRUS_INPUT = 219
+    MEAT_3_INPUT = 209
+    CAFE_TRISTE_INPUT = 212
+    THE_COMMISSARY_INPUT = 214
+    DA_WINGS_INPUT = 210
+    BREAKSIDE_GRILL_INPUT = 217
+    CHAZ_CHEDDAR_INPUT = 215
+    HALF_CAFF_COFFEE_INPUT = 216
+    MILDREDS_NOOK_INPUT = 218
+    BELLYS_INPUT = 211
+    SUSHI_YEAH_INPUT = 220
 
 
 @unique
@@ -183,32 +206,6 @@ class JackDirection(Enum):
         if self is JackDirection.OUT:
             return JackDirection.IN
         assert False
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}.{self.name}"
-
-
-# from enum docs
-class OrderedEnum(Enum):
-    def __ge__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value >= other.value
-        return NotImplemented
-
-    def __gt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value > other.value
-        return NotImplemented
-
-    def __le__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value <= other.value
-        return NotImplemented
-
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self.value < other.value
-        return NotImplemented
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}.{self.name}"

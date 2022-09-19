@@ -20,7 +20,7 @@ from .modules import (
     SmallCounter,
 )
 
-__all__ = ["read_solution", "read_solutions", "write_solution"]
+__all__ = ["read_solution", "read_solutions", "write_solution", "dump_solution"]
 
 
 def read_bytes(stream: BinaryIO, size: int) -> bytes:
@@ -233,3 +233,10 @@ def write_solution(stream: BinaryIO, solution: Solution) -> None:
     write_int(stream, len(solution.wires), 4)
     for wire in solution.wires:
         write_wire(stream, wire)
+
+
+def dump_solution(solution: Solution) -> bytes:
+    """Export a solution as bytes."""
+    stream = io.BytesIO()
+    write_solution(stream, solution)
+    return stream.getvalue()
