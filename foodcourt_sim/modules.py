@@ -657,6 +657,18 @@ class Router(Module):
             return [MoveEntity(target, old_direction, force=False)]
         return []
 
+    def handle_moves(
+        self,
+        state: State,
+        moves: list[MoveEntity],
+        ignore_collisions: bool = False,
+        dry_run: bool = False,
+    ) -> Optional[MoveEntity]:
+        # same as Conveyor.handle_moves()
+        if not (state.get_entity(self.floor_position) is None or ignore_collisions):
+            return None
+        return super().handle_moves(state, moves, ignore_collisions, dry_run)
+
 
 class Sensor(Module):
     _MODULE_IDS = [ModuleId.SENSOR]
