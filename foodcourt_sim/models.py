@@ -34,6 +34,9 @@ class Direction(Enum):
     LEFT = 2
     DOWN = 3
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
+
     def right(self) -> Direction:
         return Direction((self.value - 1) % 4)
 
@@ -53,6 +56,9 @@ class RelativeDirection(Enum):
     RIGHT = 1
     BACK = 2
     LEFT = 3
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}.{self.name}"
 
 
 class Position(NamedTuple):
@@ -110,8 +116,8 @@ class Solution:  # pylint: disable=too-many-instance-attributes
             lines.append(f"  cost={self.cost!r},")
 
         lines.append("  modules=[")
-        for module in self.modules:
-            lines.append(f"    {module!r},")
+        for i, module in enumerate(self.modules):
+            lines.append(f"    {i}: {module!r},")
         lines.append("  ],")
 
         lines.append("  wires=[")

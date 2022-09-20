@@ -263,6 +263,48 @@ def main() -> None:
 
     parser_simulate.set_defaults(func=run_simulate)
 
+    parser_show_solution = subparsers.add_parser(
+        "show_solution", help="Read solution files and print their metadata"
+    )
+    parser_show_solution.add_argument(
+        "solution_file",
+        nargs=argparse.ONE_OR_MORE,
+        type=Path,
+        help="Solution file path",
+    )
+    parser_show_solution.add_argument(
+        "--dump", action="store_true", help="Dump the entire solution structure"
+    )
+    parser_show_solution.add_argument(
+        "--normalize", action="store_true", help="Normalize the solution before dumping"
+    )
+
+    def run_show_solution(args: argparse.Namespace) -> int:
+        for path in args.solution_file:
+            try:
+                solution = read_solution(path)
+            except InvalidSolutionError as ex:
+                print(f"Invalid solution file: {ex}")
+                return get_exit_code(ex)
+            print(f"{path.name}: ", end="")
+            if args.dump:
+                if args.normalize:
+                    solution = solution.normalize()
+                print(solution)
+            else:
+                out = []
+                if not path.name.startswith(solution.level.internal_name):
+                    out.append(solution.level.name)
+                out.append(f'"{solution.name}",')
+                if solution.solved:
+                    out.append(f"{solution.time}T/{solution.cost}C")
+                else:
+                    out.append("unsolved")
+                print(" ".join(out))
+        return 0
+
+    parser_show_solution.set_defaults(func=run_show_solution)
+
     args = parser.parse_args()
     sys.exit(args.func(args))
 
