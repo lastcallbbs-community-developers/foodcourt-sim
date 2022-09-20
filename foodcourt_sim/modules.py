@@ -82,8 +82,8 @@ class Signals:
 
 _MOVE_PRIORITY = [
     RelativeDirection.BACK,
-    RelativeDirection.RIGHT,
     RelativeDirection.LEFT,
+    RelativeDirection.RIGHT,
     RelativeDirection.FRONT,
 ]
 
