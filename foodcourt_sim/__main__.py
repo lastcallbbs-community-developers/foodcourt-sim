@@ -67,7 +67,9 @@ def metrics_to_json(
 ) -> dict[str, Any]:
     kwargs = dataclasses.asdict(metrics)
     if include_solution:
-        kwargs["solution"] = base64.b64encode(dump_solution(solution)).decode()
+        kwargs["solution"] = base64.b64encode(
+            dump_solution(solution.normalize())
+        ).decode()
     return to_json(solution, is_correct=True, **kwargs)
 
 
