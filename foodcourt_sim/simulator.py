@@ -546,9 +546,13 @@ def simulate_solution(
             ).time
         )
     max_time = max(times)
-    if solution.solved and solution.time != max_time:
-        raise InvalidSolutionError(
-            f"evaluated time ({max_time}) doesn't match stored time ({solution.time})"
+    if solution.solved and max_time > solution.time:
+        logger.warning(
+            '%s, "%s": evaluated time (%d) doesn\'t match stored time (%d)',
+            solution.level.name,
+            solution.name,
+            max_time,
+            solution.time,
         )
     return Metrics(
         cost=solution.cost,

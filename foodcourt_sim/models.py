@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum, unique
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
+from . import logger
 from .enums import JackDirection, LevelId, ModuleId
 from .errors import InvalidSolutionError
 
@@ -235,13 +236,13 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                     f"{module_1}, jack {wire.jack_1} is connected to {module_2}, jack {wire.jack_2} with the same direction"
                 )
 
-        if self.solved:
-            if self.cost != cost:
-                raise InvalidSolutionError(
-                    "calculated cost doesn't match recorded cost"
-                )
-        else:
-            self.cost = cost
+        if self.solved and self.cost != cost:
+            logger.warning(
+                '%s, "%s": calculated cost doesn\'t match recorded cost',
+                self.level.name,
+                self.name,
+            )
+        self.cost = cost
 
     def normalize(self) -> Solution:
         """Normalize the internals so identical-appearing solutions export to

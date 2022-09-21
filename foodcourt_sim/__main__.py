@@ -8,16 +8,10 @@ import logging
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, BinaryIO, Optional, Union
+from typing import Any, BinaryIO, Union
 
 from . import logger
-from .errors import (
-    EmergencyStop,
-    InternalSimulationError,
-    InvalidSolutionError,
-    SimulationError,
-    TimeLimitExceeded,
-)
+from .errors import InternalSimulationError, InvalidSolutionError, SimulationError
 from .levels import LEVELS
 from .models import Solution
 from .savefile import dump_solution, read_solution, read_solutions
@@ -25,39 +19,22 @@ from .simulator import Metrics, simulate_solution
 
 REPORT_MESSAGE = "Please contact @yut23#9382 on the Zachtronics discord or open an issue at https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new."
 
-EXIT_CODES = {
-    EmergencyStop: 1,
-    TimeLimitExceeded: 2,
-    InvalidSolutionError: 3,
-    InternalSimulationError: 127,
-}
-
 # configure logging
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
+ch.setFormatter(logging.Formatter("%(levelname)s|%(message)s"))
 logger.addHandler(ch)
 
 
-def get_exit_code(ex: Exception) -> int:
-    for error_class, code in EXIT_CODES.items():
-        if isinstance(ex, error_class):
-            return code
-    return 255
-
-
-def to_json(solution: Optional[Solution], /, **kwargs: Any) -> dict[str, Any]:
-    result = {}
-    if solution is not None:
-        result.update(
-            dict(
-                level_number=solution.level.number,
-                level_name=solution.level.name,
-                level_slug=solution.level.internal_name,
-                solution_name=solution.name,
-                filename=solution.filename,
-                marked_solved=solution.solved,
-            )
-        )
+def to_json(solution: Solution, /, **kwargs: Any) -> dict[str, Any]:
+    result = dict(
+        level_number=solution.level.number,
+        level_name=solution.level.name,
+        level_slug=solution.level.internal_name,
+        solution_name=solution.name,
+        filename=solution.filename,
+        marked_solved=solution.solved,
+    )
     result.update(**kwargs)
     return result
 
@@ -73,9 +50,7 @@ def metrics_to_json(
     return to_json(solution, is_correct=True, **kwargs)
 
 
-def error_to_json(
-    solution: Optional[Solution], ex: Exception, **kwargs: Any
-) -> dict[str, Any]:
+def error_to_json(solution: Solution, ex: Exception, **kwargs: Any) -> dict[str, Any]:
     return to_json(
         solution,
         is_correct=False,
@@ -138,7 +113,6 @@ def main() -> None:
                     json_results.append(error_to_json(solution, ex))
                 except SimulationError as ex:
                     json_results.append(error_to_json(solution, ex))
-                    exit_code = get_exit_code(ex)
                 else:
                     json_results.append(
                         metrics_to_json(solution, metrics, args.include_solution)
@@ -209,13 +183,11 @@ def main() -> None:
             try:
                 solutions.extend(read_solutions(input_source))
             except InvalidSolutionError as ex:
+                logger.error("Unable to parse solution files: %s", ex)
                 if args.json:
-                    print(json.dumps([error_to_json(None, ex, filename=solution_file)]))
-                else:
-                    print(f"Invalid solution file: {ex}")
-                return get_exit_code(ex)
-        exit_code = 0
-        nagged_to_report = False
+                    print(json.dumps([]))
+                return 255
+        nag_to_report = False
         for i, solution in enumerate(solutions):
             if solution.solved:
                 time_limit = solution.time
@@ -230,19 +202,23 @@ def main() -> None:
                 metrics = simulate_solution(solution, time_limit=time_limit)
             except (SimulationError, InvalidSolutionError) as ex:
                 results.append(error_to_json(solution, ex))
-                exit_code = max(exit_code, get_exit_code(ex))
                 if isinstance(ex, InternalSimulationError):
-                    logger.error("Internal simulation error encountered: %s", ex)
-                    if not nagged_to_report:
-                        logger.error(REPORT_MESSAGE)
-                        nagged_to_report = True
-                elif solution.solved:
                     logger.error(
-                        "Simulation error encountered in solved solution: %s", ex
+                        "Internal simulation error encountered%s: %s",
+                        f' ({solution.level.name} "{solution.name}")'
+                        if args.json
+                        else "",
+                        ex,
                     )
-                    if not nagged_to_report:
-                        logger.error(REPORT_MESSAGE)
-                        nagged_to_report = True
+                    nag_to_report = True
+                elif solution.solved:
+                    logger.warning(
+                        "%sSimulation error encountered in solved solution: %s",
+                        f'{solution.level.name} "{solution.name}": '
+                        if args.json
+                        else "",
+                        ex,
+                    )
                 if not args.json:
                     print(f"Simulation failed:\n{ex}")
             else:
@@ -250,16 +226,17 @@ def main() -> None:
                     metrics_to_json(solution, metrics, args.include_solution)
                 )
             if not args.json and results[-1]["is_correct"]:
-                for field in dataclasses.fields(metrics):
-                    print(field.name, "=", getattr(metrics, field.name))
+                print(metrics)
                 if not solution.solved:
                     print(
                         "Note: this solution was not marked as solved in-game. If it doesn't actually work,"
                     )
                     print(REPORT_MESSAGE)
+        if nag_to_report:
+            logger.error(REPORT_MESSAGE)
         if args.json:
             print(json.dumps(results))
-        return exit_code
+        return 0
 
     parser_simulate.set_defaults(func=run_simulate)
 
@@ -285,7 +262,7 @@ def main() -> None:
                 solution = read_solution(path)
             except InvalidSolutionError as ex:
                 print(f"Invalid solution file: {ex}")
-                return get_exit_code(ex)
+                return 1
             print(f"{path.name}: ", end="")
             if args.dump:
                 if args.normalize:
