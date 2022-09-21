@@ -530,7 +530,7 @@ class Metrics:
     num_wires: int
 
     def __str__(self) -> str:
-        return f"{self.max_time}T/{self.cost}C/{self.total_time}S/{self.num_wires}W"
+        return f"{self.max_time}T/{self.cost}k/{self.total_time}S/{self.num_wires}W"
 
 
 def simulate_solution(
