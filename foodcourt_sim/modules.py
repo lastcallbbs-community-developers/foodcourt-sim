@@ -743,12 +743,24 @@ class Sorter(EjectingModule):
         self._set_signal("SENSE", target is not None, state)
 
 
+@dataclass
 class Stacker(Module):
     _MODULE_IDS = [ModuleId.STACKER]
     price = 20
     jacks = [OutJack("STACK"), InJack("EJECT")]
 
+    just_stacked: bool = False
+
+    __hash__ = Module.__hash__
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (self.just_stacked,)
+
+    def debug_str(self) -> str:
+        return "just stacked" if self.just_stacked else ""
+
     def tick(self, state: State) -> list[MoveEntity]:
+        self.just_stacked = False
         target = state.get_entity(self.floor_position)
         if target is None or not self._get_signal("EJECT"):
             return []
@@ -775,8 +787,12 @@ class Stacker(Module):
             )
             # stacking logic
             base.add_to_stack(state, move.entity, stack_error)
-            self._set_signal("STACK", True, state)
+            self.just_stacked = True
         return None
+
+    def update_signals(self, state: State) -> None:
+        if self.just_stacked:
+            self._set_signal("STACK", True, state)
 
 
 class Cooker(EjectingModule):
