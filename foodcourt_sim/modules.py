@@ -1289,6 +1289,12 @@ class Espresso(EjectingModule):
             if target is not None:
                 return [MoveEntity(target, self.direction)]
             return []
+        if (
+            target is not None
+            and target.id is EntityId.TRAY
+            and target.stack is not None
+        ):
+            target = target.stack
         if self._get_signal("XTRACT"):
             error = self.emergency_stop("Extraction requires a proper target product.")
             if not isinstance(target, Cup):
