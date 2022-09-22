@@ -143,7 +143,7 @@ def main() -> None:
     )
     parser_simulate.add_argument(
         "solution_file",
-        nargs=argparse.ONE_OR_MORE,
+        nargs=argparse.ZERO_OR_MORE,
         type=str,
         help="Solution file path, or - to read from stdin",
     )
@@ -174,7 +174,7 @@ def main() -> None:
             logger.setLevel(logging.DEBUG)
         solutions: list[Solution] = []
         results = []
-        for solution_file in args.solution_file:
+        for solution_file in args.solution_file or ["-"]:
             input_source: Union[Path, BinaryIO]
             if solution_file == "-":
                 input_source = sys.stdin.buffer
