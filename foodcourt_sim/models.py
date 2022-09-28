@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-import functools
-from dataclasses import dataclass
 from enum import Enum, unique
-from typing import TYPE_CHECKING, Any, NamedTuple
-
-if TYPE_CHECKING:
-    from .entities import Entity
-
+from typing import NamedTuple
 
 __all__ = [
     "Direction",
     "RelativeDirection",
     "Position",
-    "MoveEntity",
 ]
 
 
@@ -73,39 +66,3 @@ class Position(NamedTuple):
         elif direction is Direction.DOWN:
             row -= 1
         return Position(col, row)
-
-
-@functools.total_ordering  # optimization note: this adds some overhead (see the docs)
-@dataclass(frozen=True, eq=False)
-class MoveEntity:
-    """Represents a pending entity movement on the factory floor."""
-
-    entity: Entity
-    direction: Direction
-    force: bool = True
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, MoveEntity):
-            return NotImplemented
-        return (id(self.entity), self.direction, self.force) == (
-            id(other.entity),
-            other.direction,
-            other.force,
-        )
-
-    def __lt__(self, other: Any) -> bool:
-        if not isinstance(other, MoveEntity):
-            return NotImplemented
-        return (id(self.entity), self.direction.value, self.force) < (
-            id(other.entity),
-            other.direction.value,
-            other.force,
-        )
-
-    @functools.cached_property
-    def source(self) -> Position:
-        return self.entity.position
-
-    @functools.cached_property
-    def dest(self) -> Position:
-        return self.entity.position.shift_by(self.direction)

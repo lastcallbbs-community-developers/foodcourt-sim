@@ -31,7 +31,7 @@ from .errors import (
     InvalidSolutionError,
     TooManyActiveInputs,
 )
-from .models import Direction, MoveEntity, RelativeDirection
+from .models import Direction, RelativeDirection
 from .operations import (
     CoatFluid,
     DispenseFluid,
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from .enums import MusicMode, PaintColor
     from .levels import Level
     from .models import Position
-    from .simulator import State
+    from .simulator import MoveEntity, State
 
 
 class Jack(NamedTuple):
@@ -228,15 +228,13 @@ class Module:
     def debug_str(self) -> str:
         return ""
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         """Update internal state and act on entities based on the current tick.
 
         Called before handle_moves().
 
         Return a list of movements to apply to entities at this module's position.
         """
-        del state
-        return []
 
     def handle_moves(
         self,
@@ -330,14 +328,8 @@ class MainInput(Module):
                 position=self.floor_position, capacity=state.level.tray_capacity
             )
         state.add_entity(tray)
-
-    def tick(self, state: State) -> list[MoveEntity]:
-        if state.time == 1:
-            # only on first tick
-            tray = state.get_entity(self.floor_position)
-            assert tray is not None
-            return [MoveEntity(tray, self.direction)]
-        return []
+        # this will be processed on tick 1
+        state.queue_move(tray, self.direction)
 
 
 @dataclass
@@ -362,12 +354,12 @@ class EntityInput(Input):
         self.jacks = [InJack(eid.name) for eid in self.entity_ids]
         super().__post_init__(level)
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         input_count = sum(self._get_signals())
         if input_count > 1:
             raise TooManyActiveInputs(self)
         if input_count == 0:
-            return []
+            return
         idx = self.signals.values.index(True)
         eid = self.entity_ids[idx]
         entity: Entity
@@ -395,7 +387,7 @@ class EntityInput(Input):
         else:
             entity = Entity(id=eid, position=self.floor_position)
         state.add_entity(entity)
-        return [MoveEntity(entity, self.direction)]
+        state.queue_move(entity, self.direction)
 
 
 class Freezer(EntityInput):
@@ -432,12 +424,12 @@ class FluidDispenser(ToppingInput):
         if not (0 <= spout_pos.row < 7 and 0 <= spout_pos.column < 6):
             raise InvalidSolutionError("Floor position out-of-bounds")
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         input_count = self._get_signal_count()
         if input_count > 1 and state.level.id is not LevelId.MR_CHILLY:
             raise TooManyActiveInputs(self)
         if input_count == 0:
-            return []
+            return
         topping = self.topping_ids[self.signals.values.index(True)]
         pos = self.floor_position.shift_by(self.direction)
         target = state.get_entity(pos)
@@ -454,10 +446,10 @@ class FluidDispenser(ToppingInput):
         op = DispenseFluid(topping)
         if isinstance(target, Cup):
             target.add_fluid(topping, error)
-            return []
+            return
         if isinstance(target, ChaatDough):
             target.add_sauce(topping, error)
-            return []
+            return
         if state.level.id is LevelId.MILDREDS_NOOK and target.id is EntityId.MULTITRAY:
             capacity = 1
         elif target.id in (EntityId.NACHO, EntityId.GLASS, EntityId.BOWL):
@@ -474,7 +466,6 @@ class FluidDispenser(ToppingInput):
         ):
             raise error
         target.operations.append(op)
-        return []
 
 
 class FluidCoater(ToppingInput):
@@ -489,12 +480,12 @@ class FluidCoater(ToppingInput):
             len(self.topping_ids) == 1
         ), "invalid level: too many toppings for FluidCoater"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         target.operations.append(CoatFluid(self.topping_ids[0]))
-        return [MoveEntity(target, self.direction)]
+        state.queue_move(target, self.direction)
 
     def handle_moves(
         self,
@@ -537,15 +528,14 @@ class ToppingDispenser(ToppingInput):
     _MODULE_IDS = [ModuleId.TOPPING_DISPENSER]
     _input_directions = {RelativeDirection.BACK}
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if self._get_signal(0):
             if target is None:
                 raise self.emergency_stop("There is no product beneath this dispenser.")
             target.operations.append(DispenseTopping(self.topping_ids[0]))
         if target is not None:
-            return [MoveEntity(target, self.direction)]
-        return []
+            state.queue_move(target, self.direction)
 
 
 class HalfToppingDispenser(ToppingInput):
@@ -562,7 +552,7 @@ class HalfToppingDispenser(ToppingInput):
                 "Pizza topping dispenser can only face up or down"
             )
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         entity = state.get_entity(self.floor_position)
         if self._get_signal(0):
             if entity is None:
@@ -577,8 +567,7 @@ class HalfToppingDispenser(ToppingInput):
                 )
             target.left_toppings.add(self.topping_ids[0])
         if entity is not None:
-            return [MoveEntity(entity, self.direction)]
-        return []
+            state.queue_move(entity, self.direction)
 
 
 class Conveyor(Module):
@@ -587,11 +576,11 @@ class Conveyor(Module):
     price = 5
     on_rack = False
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
-        return [MoveEntity(target, self.direction, force=False)]
+            return
+        state.queue_move(target, self.direction, force=False)
 
     def handle_moves(
         self,
@@ -616,16 +605,16 @@ class Output(Module):
         if self.direction is not Direction.DOWN:
             raise InvalidSolutionError("Output must face down")
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         expected = state.level.order_products[state.order_index]
         if target != expected:
             logger.debug("expected: %s", expected)
             logger.debug("got:      %s", target)
             raise self.emergency_stop("This product does not match the order.")
-        return [MoveEntity(target, self.direction)]
+        state.queue_move(target, self.direction)
 
 
 @dataclass
@@ -648,7 +637,7 @@ class Router(Module):
     def debug_str(self) -> str:
         return self.current_direction.relative_to(self.direction).name
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
         old_direction = self.current_direction
@@ -660,8 +649,7 @@ class Router(Module):
             self.current_direction = self.direction.right()
         target = state.get_entity(self.floor_position)
         if target is not None:
-            return [MoveEntity(target, old_direction, force=False)]
-        return []
+            state.queue_move(target, old_direction, force=False)
 
     def handle_moves(
         self,
@@ -727,12 +715,12 @@ class Sorter(EjectingModule):
     price = 10
     jacks = [OutJack("SENSE"), InJack("LEFT"), InJack("THRU"), InJack("RIGHT")]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         direction = None
         if self._get_signal("THRU"):
             direction = self.direction
@@ -741,8 +729,7 @@ class Sorter(EjectingModule):
         elif self._get_signal("RIGHT"):
             direction = self.direction.right()
         if direction is not None:
-            return [MoveEntity(target, direction)]
-        return []
+            state.queue_move(target, direction)
 
     def update_signals(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
@@ -765,12 +752,12 @@ class Stacker(Module):
     def debug_str(self) -> str:
         return "just stacked" if self.just_stacked else ""
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         self.just_stacked = False
         target = state.get_entity(self.floor_position)
         if target is None or not self._get_signal("EJECT"):
-            return []
-        return [MoveEntity(target, self.direction)]
+            return
+        state.queue_move(target, self.direction)
 
     def handle_moves(
         self,
@@ -833,14 +820,14 @@ class Cooker(EjectingModule):
     price = 20
     jacks = [OutJack("SENSE"), InJack("EJECT")]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         first_tick = not self.signals.values[0]
         if target is None:
-            return []
+            return
         if self._get_signal("EJECT"):
-            return [MoveEntity(target, self.direction)]
-        if not first_tick:
+            state.queue_move(target, self.direction)
+        elif not first_tick:
             op = Operation(
                 {
                     ModuleId.GRILL: OperationId.COOK_GRILL,
@@ -851,7 +838,6 @@ class Cooker(EjectingModule):
             # don't cook things more after they're burnt
             if target.operations.count(op) <= self._MAX_COOK_TIMES[target.id]:
                 target.operations.append(op)
-        return []
 
     def handle_moves(
         self,
@@ -900,15 +886,14 @@ class WasteBin(SimpleMachine):
     def debug_str(self) -> str:
         return "full" if self.is_full else "empty"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         if self.is_full:
             raise self.emergency_stop("This waste bin has already been used.")
         self.is_full = True
         state.remove_entity(target)
-        return []
 
 
 class DoubleSlicer(SimpleMachine):
@@ -930,10 +915,10 @@ class DoubleSlicer(SimpleMachine):
         },
     }
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         eid = self._LOOKUP[state.level.id][target.id]
         if state.level.id in (LevelId.CAFE_TRISTE, LevelId.SUSHI_YEAH):
             state.remove_entity(target)
@@ -945,10 +930,8 @@ class DoubleSlicer(SimpleMachine):
             entity_r = Entity(eid, position=self.floor_position)
             entity_l = target
             state.add_entity(entity_r)
-        return [
-            MoveEntity(entity_r, direction=self.direction.right()),
-            MoveEntity(entity_l, direction=self.direction.left()),
-        ]
+        state.queue_move(entity_r, direction=self.direction.right())
+        state.queue_move(entity_l, direction=self.direction.left())
 
     def handle_moves(
         self,
@@ -974,10 +957,10 @@ class DoubleSlicer(SimpleMachine):
 class TripleSlicer(SimpleMachine):
     _MODULE_IDS = [ModuleId.TRIPLE_SLICER]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         assert target.id in (
             EntityId.CHICKEN,
             EntityId.CHICKEN_HALF,
@@ -993,15 +976,12 @@ class TripleSlicer(SimpleMachine):
             entity_t = cutlet
         state.add_entity(entity_r)
         state.add_entity(entity_t)
-        moves = [
-            MoveEntity(entity_r, direction=self.direction.right()),
-            MoveEntity(entity_t, direction=self.direction),
-        ]
+        state.queue_move(entity_r, direction=self.direction.right())
+        state.queue_move(entity_t, direction=self.direction)
         if target.id == EntityId.CHICKEN:
             entity_l = Entity(EntityId.CHICKEN_HALF, position=self.floor_position)
             state.add_entity(entity_l)
-            moves.append(MoveEntity(entity_l, direction=self.direction.left()))
-        return moves
+            state.queue_move(entity_l, direction=self.direction.left())
 
     def handle_moves(
         self,
@@ -1025,20 +1005,18 @@ class TripleSlicer(SimpleMachine):
 class HorizontalSlicer(SimpleMachine):
     _MODULE_IDS = [ModuleId.HORIZONTAL_SLICER]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         assert target.id is EntityId.BUN, "should have been caught in handle_moves()"
         state.remove_entity(target)
         entity_r = Entity(EntityId.BUN_BOTTOM, position=self.floor_position)
         entity_l = Entity(EntityId.BUN_TOP, position=self.floor_position)
         state.add_entity(entity_r)
         state.add_entity(entity_l)
-        return [
-            MoveEntity(entity_r, direction=self.direction.right()),
-            MoveEntity(entity_l, direction=self.direction.left()),
-        ]
+        state.queue_move(entity_r, direction=self.direction.right())
+        state.queue_move(entity_l, direction=self.direction.left())
 
     def handle_moves(
         self,
@@ -1062,10 +1040,10 @@ class HorizontalSlicer(SimpleMachine):
 class Roller(SimpleMachine):
     _MODULE_IDS = [ModuleId.ROLLER]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         if target.id is EntityId.PAPER:
             assert target.operations == [
                 DispenseTopping(ToppingId.LEAVES)
@@ -1073,8 +1051,8 @@ class Roller(SimpleMachine):
             state.remove_entity(target)
             entity = Entity(EntityId.CIGARETTE_4X, position=self.floor_position)
             state.add_entity(entity)
-            return [MoveEntity(entity, self.direction)]
-        if isinstance(target, Nori):
+            state.queue_move(entity, self.direction)
+        elif isinstance(target, Nori):
             if target.multistack[0].stack.id is EntityId.TUNA:  # type: ignore
                 roll_type = EntityId.TUNA_MAKI_4X
             else:
@@ -1082,8 +1060,9 @@ class Roller(SimpleMachine):
             state.remove_entity(target)
             entity = Entity(roll_type, position=self.floor_position)
             state.add_entity(entity)
-            return [MoveEntity(entity, self.direction)]
-        assert False, "should have been caught in handle_moves()"
+            state.queue_move(entity, self.direction)
+        else:
+            assert False, "should have been caught in handle_moves()"
 
     def handle_moves(
         self,
@@ -1119,15 +1098,15 @@ class Roller(SimpleMachine):
 class Docker(SimpleMachine):
     _MODULE_IDS = [ModuleId.DOCKER]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         assert isinstance(
             target, ChaatDough
         ), "should have been caught in handle_moves()"
         target.operations.append(Dock())
-        return [MoveEntity(target, self.direction)]
+        state.queue_move(target, self.direction)
 
     def handle_moves(
         self,
@@ -1151,10 +1130,10 @@ class Docker(SimpleMachine):
 class Flattener(SimpleMachine):
     _MODULE_IDS = [ModuleId.FLATTENER]
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         entity = state.get_entity(self.floor_position)
         if entity is None:
-            return []
+            return
         target = entity
         # can operate on top of tray
         if target.id is EntityId.TRAY and target.stack is not None:
@@ -1163,7 +1142,7 @@ class Flattener(SimpleMachine):
             target, PizzaDough
         ), "should have been caught in handle_moves()"
         target.operations.append(Flatten())
-        return [MoveEntity(entity, self.direction)]
+        state.queue_move(entity, self.direction)
 
     def handle_moves(
         self,
@@ -1191,10 +1170,10 @@ class Rotator(SimpleMachine):
     _MODULE_IDS = [ModuleId.ROTATOR]
     _input_directions = {RelativeDirection.FRONT, RelativeDirection.BACK}
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         entity = state.get_entity(self.floor_position)
         if entity is None:
-            return []
+            return
         target = entity
         # can operate on top of tray
         if target.id is EntityId.TRAY and target.stack is not None:
@@ -1205,7 +1184,7 @@ class Rotator(SimpleMachine):
                 target.right_toppings,
                 target.left_toppings,
             )
-        return [MoveEntity(entity, self.direction)]
+        state.queue_move(entity, self.direction)
 
     def handle_moves(
         self,
@@ -1238,10 +1217,10 @@ class Painter(Module):
 
     __hash__ = Module.__hash__
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
-            return []
+            return
         assert isinstance(
             target, PaintableCup
         ), "should have been caught in handle_moves()"
@@ -1254,7 +1233,7 @@ class Painter(Module):
         }[self.mask]
         for i in indices:
             target.colors[i] = self.color
-        return [MoveEntity(target, self.direction)]
+        state.queue_move(target, self.direction)
 
     def handle_moves(
         self,
@@ -1298,19 +1277,19 @@ class Espresso(EjectingModule):
     def debug_str(self) -> str:
         return f"grind_count={self.grind_count}"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         if self._get_signal_count() > 1:
             raise TooManyActiveInputs(self)
         if self._get_signal("GRIND"):
             if self.grind_count >= 4:
                 raise self.emergency_stop("The espresso filter is already full.")
             self.grind_count += 1
-            return []
+            return
         target = state.get_entity(self.floor_position)
         if self._get_signal("EJECT"):
             if target is not None:
-                return [MoveEntity(target, self.direction)]
-            return []
+                state.queue_move(target, self.direction)
+            return
         if (
             target is not None
             and target.id is EntityId.TRAY
@@ -1325,7 +1304,7 @@ class Espresso(EjectingModule):
                 raise self.emergency_stop("The espresso filter is not yet full.")
             self.grind_count = 0
             target.add_fluid(ToppingId.COFFEE, error)
-            return []
+            return
         if self._get_signal("STEAM"):
             error = self.emergency_stop("Steaming requires a proper target product.")
             if not isinstance(target, Cup):
@@ -1335,7 +1314,6 @@ class Espresso(EjectingModule):
                 raise error
             target.remove_fluid(ToppingId.MILK)
             target.add_fluid(ToppingId.FOAM, error)
-        return []
 
 
 @dataclass
@@ -1418,11 +1396,10 @@ class SmallCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
                 self.count = max(-99, min(self.count + increment, 99))
-        return []
 
     def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
@@ -1461,11 +1438,10 @@ class BigCounter(Module):
     def debug_str(self) -> str:
         return f"count={self.count}"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
                 self.count = max(-99, min(self.count + increment, 99))
-        return []
 
     def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
@@ -1503,14 +1479,13 @@ class Sequencer(Module):
     def debug_str(self) -> str:
         return f"row={self.current_row}"
 
-    def tick(self, state: State) -> list[MoveEntity]:
+    def tick(self, state: State) -> None:
         if 0 <= self.current_row < 12:
             self.current_row += 1
         if self.current_row == 12 or self._get_signal("STOP"):
             self.current_row = -1
         if self.current_row == -1 and self._get_signal("START"):
             self.current_row = 0
-        return []
 
     def update_signals(self, state: State) -> None:
         if 0 <= self.current_row < 12:
