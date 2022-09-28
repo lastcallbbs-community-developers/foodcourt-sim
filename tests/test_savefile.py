@@ -2,6 +2,7 @@ import io
 from pathlib import Path
 
 import pytest
+from foodcourt_sim.errors import InvalidSolutionError
 from foodcourt_sim.savefile import (
     dump_solution,
     read_solution,
@@ -27,6 +28,12 @@ def raw_solution(request):
 def test_check(raw_solution):  # pylint: disable=redefined-outer-name
     solution = read_solution(raw_solution)
     solution.check()
+
+
+def test_check_illegal():
+    solution = read_solution(solutions_dir / "wine-oclock-illegal.solution")
+    with pytest.raises(InvalidSolutionError):
+        solution.check()
 
 
 def test_roundtrip(raw_solution):  # pylint: disable=redefined-outer-name
