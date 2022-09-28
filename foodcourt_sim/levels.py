@@ -13,7 +13,7 @@ from .entities import (
     SushiPlate,
     WingPlaceholder,
 )
-from .enums import EntityId, LevelId, PaintColor, ToppingId
+from .enums import EntityId, LevelId, ModuleId, PaintColor, ToppingId
 from .operations import (
     CoatFluid,
     CookFryer,
@@ -590,3 +590,98 @@ LEVELS = [
 
 BY_ID = {level.id: level for level in LEVELS}
 BY_NUMBER = {level.number: level for level in LEVELS}
+
+
+def _make_allowed_modules() -> tuple[
+    dict[LevelId, dict[ModuleId, int]], dict[LevelId, set[ModuleId]]
+]:
+    M = ModuleId
+    default_modules = {
+        M.MULTIMIXER,
+        M.MULTIMIXER_ENABLE,
+        M.SEQUENCER,
+        M.SMALL_COUNTER,
+        M.BIG_COUNTER,
+        M.SENSOR,
+        M.ROUTER,
+        M.SORTER,
+        M.WASTE_BIN,
+    }
+    provided = {
+        LevelId.TWO_TWELVE: {M.INPUT_1X: 2, M.FLUID_DISPENSER_1X: 1},
+        LevelId.HOT_POCKET: {M.FREEZER_1X: 1},
+        LevelId.WINE_OCLOCK: {M.INPUT_1X: 1, M.FLUID_DISPENSER_2X: 1},
+        LevelId.MUMBAI_CHAAT: {M.INPUT_1X: 1, M.FLUID_DISPENSER_3X: 1},
+        LevelId.MR_CHILLY: {M.INPUT_1X: 1, M.FLUID_DISPENSER_2X: 1},
+        LevelId.KAZAN: {M.INPUT_1X: 1},
+        LevelId.SODA_TRENCH: {M.INPUT_2X: 1, M.FLUID_DISPENSER_1X: 1},
+        LevelId.ROSIES_DOUGHNUTS: {
+            M.INPUT_1X: 1,
+            M.FLUID_COATER: 2,
+            M.TOPPING_DISPENSER: 1,
+        },
+        LevelId.ON_THE_FRIED_SIDE: {M.INPUT_1X: 1, M.FLUID_COATER: 1},
+        LevelId.SWEET_HEAT_BBQ: {M.INPUT_2X: 1},
+        LevelId.THE_WALRUS: {M.INPUT_1X: 1, M.FREEZER_1X: 1, M.FLUID_DISPENSER_2X: 2},
+        LevelId.MEAT_3: {M.INPUT_1X: 1, M.FREEZER_1X: 1, M.FLUID_DISPENSER_1X: 4},
+        LevelId.CAFE_TRISTE: {M.INPUT_1X: 2, M.TOPPING_DISPENSER: 1},
+        LevelId.THE_COMMISSARY: {M.INPUT_2X: 1, M.FREEZER_7X: 1},
+        LevelId.DA_WINGS: {M.INPUT_1X: 1, M.FLUID_COATER: 1},
+        LevelId.BREAKSIDE_GRILL: {M.INPUT_1X: 2, M.INPUT_3X: 1},
+        LevelId.CHAZ_CHEDDAR: {M.INPUT_1X: 1, M.HALF_TOPPING_DISPENSER: 4},
+        LevelId.HALF_CAFF_COFFEE: {M.INPUT_1X: 1, M.FLUID_DISPENSER_1X: 2},
+        LevelId.MILDREDS_NOOK: {
+            M.INPUT_1X: 2,
+            M.INPUT_2X: 1,
+            M.INPUT_3X: 1,
+            M.FLUID_DISPENSER_1X: 1,
+        },
+        LevelId.BELLYS: {M.INPUT_2X: 2, M.FREEZER_3X: 1, M.FLUID_DISPENSER_2X: 1},
+        LevelId.SUSHI_YEAH: {M.INPUT_2X: 3, M.FLUID_DISPENSER_1X: 1},
+    }
+    buyable: dict[LevelId, set[ModuleId]] = {
+        LevelId.TWO_TWELVE: set(),
+        LevelId.HOT_POCKET: {M.MICROWAVE, M.SMALL_COUNTER},
+        LevelId.WINE_OCLOCK: {
+            M.MULTIMIXER,
+            M.MULTIMIXER_ENABLE,
+            M.SMALL_COUNTER,
+            M.SORTER,
+        },
+        LevelId.MUMBAI_CHAAT: {M.DOCKER, M.FRYER} | (default_modules - {M.BIG_COUNTER}),
+        LevelId.MR_CHILLY: set(default_modules),
+        LevelId.KAZAN: set(default_modules),
+        LevelId.SODA_TRENCH: {M.PAINTER} | default_modules,
+        LevelId.ROSIES_DOUGHNUTS: {M.FRYER} | default_modules,
+        LevelId.ON_THE_FRIED_SIDE: {M.TRIPLE_SLICER, M.FRYER} | default_modules,
+        LevelId.SWEET_HEAT_BBQ: {M.DOUBLE_SLICER} | default_modules,
+        LevelId.THE_WALRUS: set(default_modules),
+        LevelId.MEAT_3: {M.GRILL} | default_modules,
+        LevelId.CAFE_TRISTE: {M.ROLLER, M.DOUBLE_SLICER, M.ESPRESSO} | default_modules,
+        LevelId.THE_COMMISSARY: {M.MICROWAVE, M.FRYER} | default_modules,
+        LevelId.DA_WINGS: {M.TRIPLE_SLICER, M.FRYER} | default_modules,
+        LevelId.BREAKSIDE_GRILL: {M.HORIZONTAL_SLICER, M.GRILL} | default_modules,
+        LevelId.CHAZ_CHEDDAR: {M.FLATTENER, M.ROTATOR, M.ANIMATRONIC} | default_modules,
+        LevelId.HALF_CAFF_COFFEE: {M.ESPRESSO} | default_modules,
+        LevelId.MILDREDS_NOOK: {M.GRILL} | default_modules,
+        LevelId.BELLYS: {M.HORIZONTAL_SLICER, M.FRYER} | default_modules,
+        LevelId.SUSHI_YEAH: {M.ROLLER, M.DOUBLE_SLICER} | default_modules,
+    }
+    for level_id in LevelId:
+        # these modules are always provided
+        provided[level_id][M.OUTPUT] = 1
+        provided[level_id][ModuleId(M.MAIN_INPUT_BASE.value + level_id.value)] = 1
+        # these modules are always allowed
+        buyable[level_id] |= {
+            M.CONVEYOR,
+            M.STACKER,
+            ModuleId(M.SCANNER_BASE.value + level_id.value),
+        }
+
+    buyable[LevelId.CAFE_TRISTE].remove(M.WASTE_BIN)
+    buyable[LevelId.CHAZ_CHEDDAR].remove(M.WASTE_BIN)
+
+    return provided, buyable
+
+
+PROVIDED_MODULES, BUYABLE_MODULES = _make_allowed_modules()

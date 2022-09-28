@@ -136,40 +136,17 @@ class Solution:  # pylint: disable=too-many-instance-attributes
         return BY_ID[self.level_id]
 
     def check(self) -> None:
-        main_input_index = -1
+        # pylint: disable-next=import-outside-toplevel
+        from .levels import BUYABLE_MODULES, PROVIDED_MODULES
+
         occupied_rack_slots = [[False] * 11 for _ in range(3)]
         occupied_floor_slots = [[False] * 6 for _ in range(7)]
         module_indices: dict[ModuleId, list[int]] = defaultdict(list)
         cost = 0
+
+        provided_counts = PROVIDED_MODULES[self.level_id].copy()
         for i, module in enumerate(self.modules):
             module.check()
-            # make sure main input and scanners match the level
-            if (
-                ModuleId.MAIN_INPUT_BASE.value
-                < module.id.value
-                <= ModuleId.MAIN_INPUT_BASE.value + len(LevelId)
-            ):
-                if main_input_index != -1:
-                    raise InvalidSolutionError(
-                        f"duplicate main input module found at index {i} (first was at {main_input_index})"
-                    )
-                main_input_index = i
-                if (
-                    module.id.value
-                    != ModuleId.MAIN_INPUT_BASE.value + self.level_id.value
-                ):
-                    raise InvalidSolutionError(
-                        f"mismatched main input ({module.id}) for level {self.level_id.name} at index {i}"
-                    )
-            if (
-                ModuleId.SCANNER_BASE.value
-                < module.id.value
-                <= ModuleId.SCANNER_BASE.value + len(LevelId)
-            ):
-                if module.id.value != ModuleId.SCANNER_BASE.value + self.level_id.value:
-                    raise InvalidSolutionError(
-                        f"incorrect scanner ({module.id}) for level {self.level_id.name} at index {i}"
-                    )
             # check for rack collisions
             if module.on_rack:
                 pos = module.rack_position
@@ -189,8 +166,31 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                     pos = pos.shift_by(Direction.RIGHT)
             module_indices[module.id].append(i)
             cost += module.price
-        if main_input_index == -1:
-            raise InvalidSolutionError("no main input module found")
+
+            if module.can_delete:
+                if module.id not in BUYABLE_MODULES[self.level_id]:
+                    raise InvalidSolutionError(
+                        f"illegal buyable module ({module.id}) for level {self.level_id.name} at index {i}"
+                    )
+            else:
+                if module.id not in provided_counts:
+                    raise InvalidSolutionError(
+                        f"illegal provided module ({module.id}) for level {self.level_id.name} at index {i}"
+                    )
+                provided_counts[module.id] -= 1
+                if provided_counts[module.id] < 0:
+                    raise InvalidSolutionError(
+                        f"too many {module.id} modules for level {self.level_id.name} at index {i}"
+                    )
+        for module_id, count in provided_counts.items():
+            if count > 0:
+                raise InvalidSolutionError(
+                    f"provided module {module_id} is missing for level {self.level_id.name}"
+                )
+            if count < 0:
+                raise InvalidSolutionError(
+                    f"too many {module_id} modules for level {self.level_id.name}"
+                )
 
         if (
             self.level_id is LevelId.SWEET_HEAT_BBQ

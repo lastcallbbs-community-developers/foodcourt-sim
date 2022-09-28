@@ -105,7 +105,7 @@ class ModuleId(OrderedEnum):
     FREEZER_1X = 49
     FREEZER_7X = 51
     ANIMATRONIC = 52
-    TOPPING_DISPENSER = 53  # candy sprinkler for doughnuts
+    TOPPING_DISPENSER = 53  # candy sprinkler for doughnuts, cafe triste
     HORIZONTAL_SLICER = 54  # breakside grill, belly's
     FREEZER_3X = 55
 
