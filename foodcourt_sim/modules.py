@@ -426,6 +426,12 @@ class FluidDispenser(ToppingInput):
         ModuleId.FLUID_DISPENSER_3X,
     ]
 
+    def check(self) -> None:
+        super().check()
+        spout_pos = self.floor_position.shift_by(self.direction)
+        if not (0 <= spout_pos.row < 7 and 0 <= spout_pos.column < 6):
+            raise InvalidSolutionError("Floor position out-of-bounds")
+
     def tick(self, state: State) -> list[MoveEntity]:
         input_count = self._get_signal_count()
         if input_count > 1 and state.level.id is not LevelId.MR_CHILLY:

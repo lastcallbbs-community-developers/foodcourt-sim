@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
@@ -68,32 +68,37 @@ class Solution:  # pylint: disable=too-many-instance-attributes
         return BY_ID[self.level_id]
 
     def check(self) -> None:
-        occupied_rack_slots = [[False] * 11 for _ in range(3)]
-        occupied_floor_slots = [[False] * 6 for _ in range(7)]
-        module_indices: dict[ModuleId, list[int]] = defaultdict(list)
+        occupied_rack_slots: dict[Position, Module] = {}
+        occupied_floor_slots: dict[Position, Module] = {}
+        module_counts: dict[ModuleId, int] = Counter()
         cost = 0
-
-        provided_counts = PROVIDED_MODULES[self.level_id].copy()
+        fluid_dispensers = []
         for i, module in enumerate(self.modules):
             module.check()
             # check for rack collisions
             if module.on_rack:
                 pos = module.rack_position
                 for _ in range(module.rack_width):
-                    if occupied_rack_slots[pos.row][pos.column]:
-                        raise InvalidSolutionError(f"rack collision at {pos}")
-                    occupied_rack_slots[pos.row][pos.column] = True
+                    if pos in occupied_rack_slots:
+                        raise InvalidSolutionError(f"rack overlap at {pos}")
+                    occupied_rack_slots[pos] = module
                     pos = pos.shift_by(Direction.RIGHT)
             # check for floor collisions
             if module.on_floor:
                 pos = module.floor_position
                 width = 2 if module.id is ModuleId.OUTPUT else 1
                 for _ in range(width):
-                    if occupied_floor_slots[pos.row][pos.column]:
-                        raise InvalidSolutionError(f"floor collision at {pos}")
-                    occupied_floor_slots[pos.row][pos.column] = True
+                    if pos in occupied_floor_slots:
+                        raise InvalidSolutionError(f"floor overlap at {pos}")
+                    occupied_floor_slots[pos] = module
                     pos = pos.shift_by(Direction.RIGHT)
-            module_indices[module.id].append(i)
+            if module.id in (
+                ModuleId.FLUID_DISPENSER_1X,
+                ModuleId.FLUID_DISPENSER_2X,
+                ModuleId.FLUID_DISPENSER_3X,
+            ):
+                fluid_dispensers.append(module)
+            module_counts[module.id] += 1
             cost += module.price
 
             if module.can_delete:
@@ -102,36 +107,42 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                         f"illegal buyable module ({module.id}) for level {self.level_id.name} at index {i}"
                     )
             else:
-                if module.id not in provided_counts:
+                if module.id not in PROVIDED_MODULES[self.level_id]:
                     raise InvalidSolutionError(
                         f"illegal provided module ({module.id}) for level {self.level_id.name} at index {i}"
                     )
-                provided_counts[module.id] -= 1
-                if provided_counts[module.id] < 0:
-                    raise InvalidSolutionError(
-                        f"too many {module.id} modules for level {self.level_id.name} at index {i}"
-                    )
-        for module_id, count in provided_counts.items():
-            if count > 0:
+        for module_id, expected in PROVIDED_MODULES[self.level_id].items():
+            if module_counts[module_id] < expected:
                 raise InvalidSolutionError(
                     f"provided module {module_id} is missing for level {self.level_id.name}"
                 )
-            if count < 0:
+            if module_counts[module_id] > expected:
                 raise InvalidSolutionError(
                     f"too many {module_id} modules for level {self.level_id.name}"
+                )
+        # check for fluid dispenser spout collisions
+        for module in fluid_dispensers:
+            spout_pos = module.floor_position.shift_by(module.direction)
+            if spout_pos not in occupied_floor_slots:
+                continue
+            spout_target = occupied_floor_slots[spout_pos]
+            if spout_target.id not in (
+                ModuleId.ROUTER,
+                ModuleId.SORTER,
+                ModuleId.CONVEYOR,
+            ):
+                raise InvalidSolutionError(
+                    f"floor overlap with fluid dispenser spout at {spout_pos}"
                 )
 
         if (
             self.level_id is LevelId.SWEET_HEAT_BBQ
-            and len(module_indices[ModuleId.WASTE_BIN]) > 2
+            and module_counts[ModuleId.WASTE_BIN] > 2
         ):
             raise InvalidSolutionError(
                 "too many waste bins for Sweet Heat BBQ (limit of 2)"
             )
-        if (
-            self.level_id is LevelId.DA_WINGS
-            and len(module_indices[ModuleId.WASTE_BIN]) > 3
-        ):
+        if self.level_id is LevelId.DA_WINGS and module_counts[ModuleId.WASTE_BIN] > 3:
             raise InvalidSolutionError("too many waste bins for Da Wings (limit of 3)")
 
         # check that wires reference existing modules
