@@ -57,13 +57,13 @@ def test_unsolved(solution: Solution, order_index: int) -> None:
     # run without debugging for speed, and only rerun with debugging if an unexpected
     # error occurs
     try:
-        simulate_order(solution, order_index, time_limit=100)
+        simulate_order(solution, order_index, time_limit=1000)
     except (TimeLimitExceeded, EmergencyStop):
         pass
     except InternalSimulationError:
         error = True
     if error:
-        simulate_order(solution, order_index, time_limit=100, debug=True)
+        simulate_order(solution, order_index, time_limit=1000, debug=True)
 
 
 @pytest.mark.parametrize(
