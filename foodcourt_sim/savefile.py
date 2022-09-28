@@ -8,7 +8,7 @@ from typing import Any, BinaryIO, Generator, Optional, Union, cast
 from .enums import LevelId, ModuleId, MusicMode, PaintColor, PaintMask
 from .errors import InvalidSolutionError
 from .levels import BY_ID, Level
-from .models import Direction, Position, Solution, Wire
+from .models import Direction, Position
 from .modules import (
     MODULE_LOOKUP,
     Animatronic,
@@ -19,6 +19,7 @@ from .modules import (
     Sequencer,
     SmallCounter,
 )
+from .solution import Solution, Wire
 
 __all__ = ["read_solution", "read_solutions", "write_solution", "dump_solution"]
 

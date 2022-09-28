@@ -9,7 +9,8 @@ from foodcourt_sim.errors import (
     SimulationError,
     TimeLimitExceeded,
 )
-from foodcourt_sim.models import Position, Solution
+from foodcourt_sim.models import Position
+from foodcourt_sim.solution import Solution
 
 solutions_dir = Path(__file__).parent / "solutions"
 

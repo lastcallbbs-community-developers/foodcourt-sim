@@ -14,6 +14,7 @@ from . import (
     operations,
     savefile,
     simulator,
+    solution,
 )
 from .errors import *
 from .levels import BY_ID, BY_NUMBER, LEVELS

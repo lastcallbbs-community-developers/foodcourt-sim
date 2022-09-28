@@ -13,9 +13,9 @@ from typing import Any, BinaryIO, Union
 from . import logger
 from .errors import InternalSimulationError, InvalidSolutionError, SimulationError
 from .levels import LEVELS
-from .models import Solution
 from .savefile import dump_solution, read_solution, read_solutions
 from .simulator import Metrics, simulate_solution
+from .solution import Solution
 
 REPORT_MESSAGE = "Please contact @yut23#9382 on the Zachtronics discord or open an issue at https://github.com/lastcallbbs-community-developers/foodcourt-sim/issues/new."
 

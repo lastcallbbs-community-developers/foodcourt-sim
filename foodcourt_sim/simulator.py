@@ -20,8 +20,8 @@ from .modules import MainInput, Output
 if TYPE_CHECKING:
     from .entities import Entity
     from .levels import Level
-    from .models import Solution, Wire
     from .modules import Module
+    from .solution import Solution, Wire
 
 
 __all__ = [
