@@ -1399,7 +1399,8 @@ class SmallCounter(Module):
     def tick(self, state: State) -> None:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
-                self.count = max(-99, min(self.count + increment, 99))
+                self.count = self.count + increment
+        self.count = max(-99, min(self.count, 99))
 
     def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
@@ -1441,7 +1442,8 @@ class BigCounter(Module):
     def tick(self, state: State) -> None:
         for signal, increment in zip(self._get_signals(), self.values):
             if signal:
-                self.count = max(-99, min(self.count + increment, 99))
+                self.count = self.count + increment
+        self.count = max(-99, min(self.count, 99))
 
     def update_signals(self, state: State) -> None:
         self._set_signal("ZERO", self.count == 0, state)
