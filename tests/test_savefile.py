@@ -1,4 +1,5 @@
 import io
+from contextlib import nullcontext as does_not_raise
 from pathlib import Path
 
 import pytest
@@ -16,27 +17,28 @@ SOLUTION_FILES = list(solutions_dir.glob("*/*.solution"))
 
 
 @pytest.fixture(
-    params=SOLUTION_FILES,
-    ids=[f"{path.parent.name}-{path.stem}" for path in SOLUTION_FILES],
+    params=[
+        pytest.param(path, id=f"{path.parent.name}-{path.stem}")
+        for path in SOLUTION_FILES
+    ]
 )
-def raw_solution(request):
-    with open(solutions_dir / request.param, "rb") as f:
-        raw = f.read()
-    return raw
+def solution_path(request):
+    return request.param
 
 
-def test_check(raw_solution):  # pylint: disable=redefined-outer-name
-    solution = read_solution(raw_solution)
-    solution.check()
-
-
-def test_check_illegal():
-    solution = read_solution(solutions_dir / "wine-oclock-illegal.solution")
-    with pytest.raises(InvalidSolutionError):
+def test_check(solution_path):  # pylint: disable=redefined-outer-name
+    solution = read_solution(solution_path)
+    if solution_path.parent.name == "illegal":
+        expectation = pytest.raises(InvalidSolutionError)
+    else:
+        expectation = does_not_raise()  # type: ignore
+    with expectation:
         solution.check()
 
 
-def test_roundtrip(raw_solution):  # pylint: disable=redefined-outer-name
+def test_roundtrip(solution_path):  # pylint: disable=redefined-outer-name
+    with open(solution_path, "rb") as f:
+        raw_solution = f.read()
     stream = io.BytesIO(raw_solution)
     solution_1 = read_solution(stream)
     stream.seek(0)
@@ -95,8 +97,8 @@ def test_normalize():
     ), "exported normalized solutions differ"
 
 
-def test_normalize_idem(raw_solution):  # pylint: disable=redefined-outer-name
-    orig = read_solution(raw_solution)
+def test_normalize_idem(solution_path):  # pylint: disable=redefined-outer-name
+    orig = read_solution(solution_path)
     norm_1 = orig.normalize()
     norm_2 = norm_1.normalize()
     assert norm_1 == norm_2, "Solution.normalize() is not idempotent"
