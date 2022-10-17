@@ -169,13 +169,15 @@ def _read_solution(stream: BinaryIO, filename: Optional[str] = None) -> Solution
 
 @contextlib.contextmanager
 def _to_stream(
-    data: Union[Path, bytes, BinaryIO]
+    data: Union[str, Path, bytes, BinaryIO]
 ) -> Generator[tuple[BinaryIO, Optional[str]], None, None]:
     """Yield (stream, filename)."""
     close = False
     stream: BinaryIO
     filename = None
     try:
+        if isinstance(data, str):
+            data = Path(data)
         if isinstance(data, io.BufferedIOBase):
             stream = cast(BinaryIO, data)
             if hasattr(data, "name"):
@@ -195,13 +197,13 @@ def _to_stream(
             close = True
             yield stream, None
         else:
-            raise TypeError("data must be one of: Path, bytes, or BufferedIOBase")
+            raise TypeError("data must be one of: str, Path, bytes, or BufferedIOBase")
     finally:
         if close:
             stream.close()
 
 
-def read_solution(data: Union[Path, bytes, BinaryIO]) -> Solution:
+def read_solution(data: Union[str, Path, bytes, BinaryIO]) -> Solution:
     with _to_stream(data) as args:
         try:
             return _read_solution(*args)
@@ -210,7 +212,7 @@ def read_solution(data: Union[Path, bytes, BinaryIO]) -> Solution:
 
 
 def read_solutions(
-    data: Union[Path, bytes, BinaryIO]
+    data: Union[str, Path, bytes, BinaryIO]
 ) -> Generator[Solution, None, None]:
     """Reads one or more concatenated solutions from the input data."""
     with _to_stream(data) as args:
