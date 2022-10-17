@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from foodcourt_sim import read_solution, simulate_order
+from foodcourt_sim import read_solution, simulate_order, simulate_solution
 from foodcourt_sim.errors import (
     EmergencyStop,
     InternalSimulationError,
@@ -51,6 +51,20 @@ def test_solved(solution: Solution, order_index: int) -> None:
     assert ticks <= solution.time
 
 
+@pytest.mark.parametrize(
+    "solution",
+    [
+        pytest.param(sol, id=f"{filepath.parent.name}-{filepath.stem}")
+        for filepath in sorted(solutions_dir.glob("*/*.solution"))
+        for sol in [read_solution(filepath)]
+        if sol.solved
+    ],
+)
+def test_solved_solution(solution: Solution) -> None:
+    ticks = simulate_solution(solution, time_limit=solution.time).max_time
+    assert ticks == solution.time
+
+
 def test_unsolved(solution: Solution, order_index: int) -> None:
     assert not solution.solved
     error = False
@@ -77,7 +91,7 @@ def test_movement(solution_name: str) -> None:
 
 
 def test_loops() -> None:
-    solution = read_solution(solutions_dir / "yut23" / "loop-testing-1.solution")
+    solution = read_solution(solutions_dir / "yut23/loop-testing-1.solution")
     ticks = simulate_order(solution, 0, time_limit=22, debug=True).time
     assert ticks == 22
 
@@ -89,7 +103,7 @@ def test_loops() -> None:
 
 
 def test_2twelve():
-    solution = read_solution(solutions_dir / "yut23" / "2twelve-1.solution")
+    solution = read_solution(solutions_dir / "yut23/2twelve-1.solution")
     state = simulate_order(solution, 1, time_limit=8, debug=True)
     assert state.time == 8
     state = simulate_order(solution, 0, time_limit=8, debug=True)
