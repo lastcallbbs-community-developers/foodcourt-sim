@@ -52,7 +52,7 @@ class Solution:  # pylint: disable=too-many-instance-attributes
 
         lines.append("  modules=[")
         for i, module in enumerate(self.modules):
-            lines.append(f"    {i}: {module!r},")
+            lines.append(f"    {i}: {module},")
         lines.append("  ],")
 
         lines.append("  wires=[")

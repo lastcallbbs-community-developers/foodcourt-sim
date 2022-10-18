@@ -113,6 +113,19 @@ class Module:
     def __hash__(self) -> int:
         return hash((self.id.value, self.floor_position, self.rack_position))
 
+    def _str_parts(self) -> dict[str, str]:
+        parts = {}
+        if self.on_floor:
+            parts["floor_position"] = repr(self.floor_position)
+            parts["direction"] = self.direction.name
+        if self.on_rack:
+            parts["rack_position"] = repr(self.rack_position)
+        return parts
+
+    def __str__(self) -> str:
+        parts = ", ".join(f"{k}={v}" for k, v in self._str_parts().items())
+        return f"{self.__class__.__name__}({parts})"
+
     def copy(self, level: Level) -> Module:
         return dataclasses.replace(self, level=level)
 
@@ -354,6 +367,11 @@ class EntityInput(Input):
         self.jacks = [InJack(eid.name) for eid in self.entity_ids]
         super().__post_init__(level)
 
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["entity_ids"] = f"[{', '.join(eid.name for eid in self.entity_ids)}]"
+        return parts
+
     def tick(self, state: State) -> None:
         input_count = sum(self._get_signals())
         if input_count > 1:
@@ -409,6 +427,11 @@ class ToppingInput(Input):
         self.topping_ids = level.topping_inputs[self.input_id]
         self.jacks = [InJack(tid.name) for tid in self.topping_ids]
         super().__post_init__(level)
+
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["topping_ids"] = f"[{', '.join(tid.name for tid in self.topping_ids)}]"
+        return parts
 
 
 class FluidDispenser(ToppingInput):
@@ -630,6 +653,11 @@ class Router(Module):
     def __post_init__(self, level: Level) -> None:
         super().__post_init__(level)
         self.current_direction = self.direction
+
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["current_direction"] = self.current_direction.name
+        return parts
 
     def dump_state(self) -> tuple[Any, ...]:
         return (self.current_direction,)
@@ -1217,6 +1245,12 @@ class Painter(Module):
 
     __hash__ = Module.__hash__
 
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["color"] = self.color.name
+        parts["mask"] = self.mask.name
+        return parts
+
     def tick(self, state: State) -> None:
         target = state.get_entity(self.floor_position)
         if target is None:
@@ -1330,6 +1364,11 @@ class Animatronic(Module):
 
     __hash__ = Module.__hash__
 
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["music_mode"] = self.music_mode.name
+        return parts
+
 
 class Multimixer(Module):
     _MODULE_IDS = [ModuleId.MULTIMIXER]
@@ -1382,6 +1421,11 @@ class SmallCounter(Module):
 
     __hash__ = Module.__hash__
 
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["values"] = repr(self.values)
+        return parts
+
     def check(self) -> None:
         super().check()
         assert len(self.values) == 2, "Invalid values length for SmallCounter"
@@ -1424,6 +1468,11 @@ class BigCounter(Module):
     count: int = 0
 
     __hash__ = Module.__hash__
+
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        parts["values"] = repr(self.values)
+        return parts
 
     def check(self) -> None:
         super().check()
@@ -1469,6 +1518,16 @@ class Sequencer(Module):
     current_row: int = -1
 
     __hash__ = Module.__hash__
+
+    def _str_parts(self) -> dict[str, str]:
+        parts = super()._str_parts()
+        pretty = {
+            i: [jack.name for jack, x in zip(self.jacks[2:], row) if x]
+            for i, row in enumerate(self.rows, start=1)
+            if any(row)
+        }
+        parts["rows"] = repr(pretty)
+        return parts
 
     def check(self) -> None:
         super().check()
