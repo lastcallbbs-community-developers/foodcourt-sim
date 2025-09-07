@@ -102,6 +102,8 @@ class Entity:
         return self._compare_key() == other._compare_key()
 
     def __lt__(self, other: Any) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, Entity):
             return NotImplemented
         return self._compare_key() < other._compare_key()

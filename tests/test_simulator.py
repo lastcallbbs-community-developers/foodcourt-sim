@@ -108,3 +108,15 @@ def test_2twelve():
     assert state.time == 8
     state = simulate_order(solution, 0, time_limit=8, debug=True)
     assert state.time == 8
+
+
+def test_bad_comparison():
+    solution = read_solution(solutions_dir / "sushi-yeah!-15.solution")
+    with pytest.raises(EmergencyStop) as excinfo:
+        simulate_order(solution, 4, time_limit=36, debug=True)
+    assert (
+        excinfo.value.message
+        == "Emergency stop: This product does not match the order."
+    )
+    assert excinfo.value.time == 12
+    assert Position(2, 0) in excinfo.value.positions
