@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 _TRAY_WHITELIST = set(EntityId) - {
-    EntityId.LID,  # soda trench, belly's
+    EntityId.LID,  # soda trench, not allowed to stack on a tray in belly's
     EntityId.ROAST,  # sweet heat bbq
     EntityId.RIBS,  # sweet heat bbq
     EntityId.ICE,  # the walrus
@@ -48,6 +48,7 @@ _BURGER_PARTS = {
 _STACK_WHITELIST = {
     EntityId.TRAY: _TRAY_WHITELIST,
     EntityId.MULTITRAY: _TRAY_WHITELIST,
+    EntityId.BELLYS_TRAY: _BURGER_PARTS,  # Cups are handled separately in BellysTray
     EntityId.CUP: {EntityId.LID, EntityId.ICE, EntityId.POTATO, EntityId.ONION},
     **{part: _BURGER_PARTS for part in _BURGER_PARTS},
     EntityId.NORI: {EntityId.RICE},
@@ -168,6 +169,29 @@ class MultiStackEntity(Entity):
 @dataclass(eq=False, repr=False)
 class Multitray(MultiStackEntity):
     id: EntityId = EntityId.MULTITRAY
+
+
+@dataclass(eq=False, repr=False)
+class BellysTray(Entity):
+    id: EntityId = EntityId.BELLYS_TRAY
+    cups: list[Entity] = field(default_factory=list)
+
+    def _compare_key(self) -> tuple[Any, ...]:
+        # order doesn't matter for the cups
+        return (*super()._compare_key(), sorted(self.cups))
+
+    def dump_state(self) -> tuple[Any, ...]:
+        return (*super().dump_state(), tuple(cup.dump_state() for cup in self.cups))
+
+    def add_to_stack(self, state: State, other: Entity, error: Exception) -> None:
+        if other.id is EntityId.CUP:
+            if len(self.cups) >= 2:
+                raise error
+            state.remove_entity(other)
+            self.cups.append(other)
+        else:
+            # defer to _STACK_WHITELIST for everything else
+            super().add_to_stack(state, other, error)
 
 
 @dataclass(eq=False, repr=False)

@@ -291,6 +291,7 @@ class EntityId(OrderedEnum):
     BLACK = auto()  # mildred's nook
     BREAD = auto()  # mildred's nook
 
+    BELLYS_TRAY = auto()  # belly's
     POTATO = auto()  # belly's
     ONION = auto()  # belly's
 
