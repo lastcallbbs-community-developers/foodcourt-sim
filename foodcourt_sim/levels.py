@@ -3,6 +3,7 @@ from collections import Counter
 from dataclasses import InitVar, dataclass, field
 
 from .entities import (
+    BellysTray,
     ChaatDough,
     Cup,
     Entity,
@@ -169,14 +170,14 @@ def nook_helper(order_id: int) -> Entity:
     )
 
 
-def bellys_helper(cheese: bool, side_id: EntityId, drink: ToppingId) -> Entity:
+def bellys_helper(cheese: bool, side_id: EntityId, drink: ToppingId) -> BellysTray:
     parts = [Entity(E.MEAT, [CookFryer()] * 4)]
     if cheese:
         parts.append(Entity(E.CHEESE))
     burger = build_burger(parts)
     cup = Cup(stack=Entity(E.LID), contents=Counter({drink: 2}))
     side = Cup(stack=Entity(side_id, [CookFryer()] * 4))
-    return multitray(burger, cup, side)
+    return BellysTray(stack=burger, cups=[cup, side])
 
 
 def nigiri(fish: EntityId) -> Entity:

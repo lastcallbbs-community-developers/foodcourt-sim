@@ -3,6 +3,7 @@ import itertools
 from collections import Counter
 
 from foodcourt_sim.entities import (
+    BellysTray,
     ChaatDough,
     Cup,
     Entity,
@@ -533,48 +534,48 @@ def test_mildreds_nook():
 
 def test_bellys():
     level = BY_ID[LevelId.BELLYS]
-    orders = [Multitray(), *level.order_products]
+    orders = [BellysTray(), *level.order_products]
 
     # fmt: off
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
-        Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
+        cups=[Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2}))],
     ) == orders[1]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
-        Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
+        cups=[Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2}))],
     ) == orders[2]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
-        Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
+        cups=[Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2}))],
     ) == orders[3]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
-        Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4)]),
+        cups=[Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2}))],
     ) == orders[4]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
-        Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
+        cups=[Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2}))],
     ) == orders[5]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
-        Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
+        cups=[Cup(stack=Entity(E.POTATO, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2}))],
     ) == orders[6]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
-        Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
+        cups=[Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.ORANGE: 2}))],
     ) == orders[7]
-    assert multitray(
-        build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
-        Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
-        Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2})),
+    assert BellysTray(
+        stack=build_burger([Entity(E.MEAT, [CookFryer()]*4), Entity(E.CHEESE)]),
+        cups=[Cup(stack=Entity(E.ONION, [CookFryer()]*4)),
+              Cup(stack=Entity(E.LID), contents=Counter({T.PURPLE: 2}))],
     ) == orders[8]
     # fmt: on
 

@@ -120,3 +120,12 @@ def test_bad_comparison():
     )
     assert excinfo.value.time == 12
     assert Position(2, 0) in excinfo.value.positions
+
+
+def test_bellys_stacking():
+    solution = read_solution(solutions_dir / "bellys-stacking.solution")
+    with pytest.raises(EmergencyStop) as excinfo:
+        simulate_order(solution, 0, time_limit=24, debug=True)
+    assert excinfo.value.message == "Emergency stop: These products cannot be stacked."
+    assert excinfo.value.time == 18
+    assert set(excinfo.value.positions) == {Position(0, 1), Position(0, 2)}

@@ -15,6 +15,7 @@ from typing import (
 
 from . import logger
 from .entities import (
+    BellysTray,
     ChaatDough,
     Cup,
     Entity,
@@ -317,7 +318,11 @@ class Scanner(Module):
 
     def update_signals(self, state: State) -> None:
         target = state.get_entity(self.floor_position.shift_by(self.direction))
-        enable = target is not None and target.id in (EntityId.TRAY, EntityId.MULTITRAY)
+        enable = target is not None and target.id in (
+            EntityId.TRAY,
+            EntityId.MULTITRAY,
+            EntityId.BELLYS_TRAY,
+        )
         if enable:
             self._set_signals([enable, *state.order_signals], state)
 
@@ -347,6 +352,8 @@ class MainInput(Module):
         tray: Entity
         if state.level.tray_capacity == 1:
             tray = Entity(EntityId.TRAY, position=self.floor_position)
+        elif state.level.id is LevelId.BELLYS:
+            tray = BellysTray(position=self.floor_position)
         else:
             tray = Multitray(
                 position=self.floor_position, capacity=state.level.tray_capacity
