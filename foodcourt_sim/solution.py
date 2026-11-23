@@ -209,8 +209,16 @@ class Solution:  # pylint: disable=too-many-instance-attributes
                 module_1, jack_1, module_2, jack_2 = module_2, jack_2, module_1, jack_1
             wire_map[module_1][jack_1] = (module_2, jack_2)
 
-        # sort modules by floor position, rack position, then module id
-        modules.sort(key=lambda m: (m.floor_position, m.rack_position, m.id))
+        # sort permanent modules first, then sort by floor position, rack
+        # position, and module id
+        modules.sort(
+            key=lambda m: (
+                1 if m.can_delete else 0,
+                m.floor_position,
+                m.rack_position,
+                m.id,
+            )
+        )
 
         # regenerate wire list
         wires = []
