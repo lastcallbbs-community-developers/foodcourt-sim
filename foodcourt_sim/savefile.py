@@ -157,6 +157,12 @@ def _read_solution(stream: BinaryIO, filename: Optional[str] = None) -> Solution
     level = BY_ID[level_id]
     num_modules = read_int(stream, 4)
     modules = [read_module(stream, level) for _ in range(num_modules)]
+    # found_deletable = False
+    # for m in modules:
+    #     if m.can_delete:
+    #         found_deletable = True
+    #     if found_deletable ^ m.can_delete:
+    #         raise InvalidSolutionError(f"module {m} has incorrect can_delete attribute")
 
     num_wires = read_int(stream, 4)
     wires = [read_wire(stream) for _ in range(num_wires)]

@@ -507,7 +507,7 @@ def simulate_order(
     if not logger.isEnabledFor(logging.DEBUG) and debug:
         # set logging level to DEBUG if it's not already enabled
         kwargs["level"] = logging.DEBUG
-    with LoggingContext(logger, **kwargs):  # type: ignore
+    with LoggingContext(logger, **kwargs):  # type: ignore[no-untyped-call]
         logger.debug("%s", solution)
         state = State.from_solution(solution, order_index)
         seen_states: OrderedDict[tuple[Any, ...], int] = OrderedDict()

@@ -592,9 +592,9 @@ BY_ID = {level.id: level for level in LEVELS}
 BY_NUMBER = {level.number: level for level in LEVELS}
 
 
-def _make_allowed_modules() -> tuple[
-    dict[LevelId, dict[ModuleId, int]], dict[LevelId, set[ModuleId]]
-]:
+def _make_allowed_modules() -> (
+    tuple[dict[LevelId, dict[ModuleId, int]], dict[LevelId, set[ModuleId]]]
+):
     M = ModuleId
     default_modules = {
         M.MULTIMIXER,

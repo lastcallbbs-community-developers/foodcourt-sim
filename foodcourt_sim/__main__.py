@@ -283,7 +283,7 @@ def main() -> None:
     parser_show_solution.set_defaults(func=run_show_solution)
 
     # check for subcommands, default to simulate if none are found
-    if set(subparsers.choices) & set(sys.argv[1:]):
+    if (set(subparsers.choices) | {"-h", "--help"}) & set(sys.argv[1:]):
         # one of the arguments matches a subparser name
         args = parser.parse_args()
     else:

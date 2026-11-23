@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import InitVar, dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Sequence, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from . import logger
 from .entities import (
@@ -95,7 +104,7 @@ class Module:
     on_rack = True
     on_floor = True
     price = 0
-    jacks = []  # type: ignore
+    jacks = []  # type: ignore[var-annotated]
 
     level: InitVar[Level]
     id: ModuleId
@@ -293,8 +302,10 @@ class Module:
 
 
 class Scanner(Module):
-    _MODULE_IDS = [ModuleId(ModuleId.SCANNER_BASE.value + id.value) for id in LevelId]
-    _input_directions = set()  # type: ignore
+    _MODULE_IDS: ClassVar[list[ModuleId]] = [
+        ModuleId(ModuleId.SCANNER_BASE.value + id.value) for id in LevelId
+    ]
+    _input_directions = set()
     rack_width = 2
     price = 20
 
@@ -315,7 +326,7 @@ class MainInput(Module):
     _MODULE_IDS = [
         ModuleId(ModuleId.MAIN_INPUT_BASE.value + id.value) for id in LevelId
     ]
-    _input_directions = set()  # type: ignore
+    _input_directions = set()
     rack_width = 2
 
     def __post_init__(self, level: Level) -> None:
@@ -347,7 +358,7 @@ class MainInput(Module):
 
 @dataclass
 class Input(Module):
-    _input_directions = set()  # type: ignore
+    _input_directions = set()
 
     input_id: int
 
@@ -694,7 +705,7 @@ class Router(Module):
 
 class Sensor(Module):
     _MODULE_IDS = [ModuleId.SENSOR]
-    _input_directions = set()  # type: ignore
+    _input_directions = set()
     price = 5
     jacks = [OutJack("SENSE")]
 
@@ -1081,7 +1092,10 @@ class Roller(SimpleMachine):
             state.add_entity(entity)
             state.queue_move(entity, self.direction)
         elif isinstance(target, Nori):
-            if target.multistack[0].stack.id is EntityId.TUNA:  # type: ignore
+            assert (
+                target.multistack[0].stack is not None
+            ), "should have been caught in handle_moves()"
+            if target.multistack[0].stack.id is EntityId.TUNA:
                 roll_type = EntityId.TUNA_MAKI_4X
             else:
                 roll_type = EntityId.SALMON_MAKI_4X
@@ -1353,7 +1367,7 @@ class Espresso(EjectingModule):
 @dataclass
 class Animatronic(Module):
     _MODULE_IDS = [ModuleId.ANIMATRONIC]
-    _input_directions = set()  # type: ignore
+    _input_directions = set()
     rack_width = 2
     price = 40
     jacks = [
@@ -1563,7 +1577,7 @@ def populate_module_table() -> dict[ModuleId, Type[Module]]:
             and hasattr(value, "_MODULE_IDS")
         ):
             # pylint: disable-next=protected-access
-            for module_id in value._MODULE_IDS:  # type: ignore  # dynamically checked
+            for module_id in value._MODULE_IDS:
                 assert isinstance(module_id, ModuleId), f"bad _MODULE_IDS for {value}"
                 assert (
                     module_id not in lookup

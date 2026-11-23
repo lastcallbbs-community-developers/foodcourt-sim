@@ -31,7 +31,7 @@ def test_check(solution_path):  # pylint: disable=redefined-outer-name
     if solution_path.parent.name == "illegal":
         expectation = pytest.raises(InvalidSolutionError)
     else:
-        expectation = does_not_raise()  # type: ignore
+        expectation = does_not_raise()  # type: ignore[assignment]
     with expectation:
         solution.check()
 
